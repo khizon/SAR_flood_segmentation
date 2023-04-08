@@ -6,8 +6,10 @@ https://medium.com/cloud-to-street/jumpstart-your-machine-learning-satellite-com
 # import cv2
 from skimage.io import imread
 import numpy as np
+import pandas as pd
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+from pytorch_lightning import LightningDataModule
 
 
 def s1_to_rgb(vv_image, vh_image):
@@ -19,7 +21,7 @@ def s1_to_rgb(vv_image, vh_image):
 class ETCIDataset(Dataset):
     def __init__(self, dataframe, split, transform=None):
         self.split = split
-        self.dataset = dataframe
+        self.dataset = pd.read_csv(dataframe)
         self.transform = transform
 
     def __len__(self):
@@ -42,7 +44,8 @@ class ETCIDataset(Dataset):
             example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
         else:
             # load ground truth flood mask
-            flood_mask = imread(df_row["flood_label"], 0) / 255.0
+            flood_mask = imread(df_row["flood_label"], 0)[:,:,0] / 255.0
+            # flood_mask = np.clip(flood_mask, 0,1)
 
             # apply augmentations if specified
             if self.transform:
@@ -52,6 +55,48 @@ class ETCIDataset(Dataset):
 
             example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
             # example["image"] = rgb_image
-            example["mask"] = flood_mask.astype("int64")
+            example["mask"] = flood_mask.astype("float32")
 
         return example
+    
+class ETCIDataModule(LightningDataModule):
+    def __init__(self, path, batch_size, num_workers, **kwargs):
+        super().__init__(**kwargs)
+        self.path = path
+        self.batch_size=batch_size
+        self.num_workers=num_workers
+        
+    def prepare_data(self):
+        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train')
+        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val')
+        self.test_dataset=ETCIDataset(self.path+'test.csv', 'test')
+        
+    def setup(self, stage=None):
+        self.prepare_data()
+        
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            pin_memory=True
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            pin_memory=True
+        )
+    
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            pin_memory=True
+        )
