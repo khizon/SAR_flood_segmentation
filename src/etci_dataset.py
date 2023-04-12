@@ -19,10 +19,13 @@ def s1_to_rgb(vv_image, vh_image):
 
 
 class ETCIDataset(Dataset):
-    def __init__(self, dataframe, split, transform=None):
+    def __init__(self, dataframe, split, debug=False, transform=None):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
         self.transform = transform
+        
+        if debug:
+            self.dataset = self.dataset.sample(8)
 
     def __len__(self):
         return self.dataset.shape[0]
@@ -60,16 +63,17 @@ class ETCIDataset(Dataset):
         return example
     
 class ETCIDataModule(LightningDataModule):
-    def __init__(self, path, batch_size, num_workers, **kwargs):
+    def __init__(self, path, batch_size, num_workers=0, debug=False, **kwargs):
         super().__init__(**kwargs)
         self.path = path
         self.batch_size=batch_size
         self.num_workers=num_workers
+        self.debug=debug
         
     def prepare_data(self):
-        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train')
-        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val')
-        self.test_dataset=ETCIDataset(self.path+'test.csv', 'test')
+        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug)
+        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val', self.debug)
+        self.test_dataset=ETCIDataset(self.path+'test.csv', 'val', self.debug)
         
     def setup(self, stage=None):
         self.prepare_data()

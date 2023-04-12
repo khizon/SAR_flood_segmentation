@@ -23,6 +23,8 @@ class SegModule(LightningModule):
         self.loss = torch.nn.BCEWithLogitsLoss()
         self.metric = BinaryJaccardIndex()
         self.validation_step_outputs = []
+        self.test_step_outputs = []
+        self.train_step_outputs = []
         
     def forward(self, x):
         return self.model(x)
@@ -36,36 +38,46 @@ class SegModule(LightningModule):
         x, y = batch['image'], batch['mask'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
+        self.train_step_outputs.append({
+            'train_loss':loss
+        })
         return {'loss': loss}
     
-    def train_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+    def on_train_epoch_end(self):
+        avg_loss = torch.stack([x["train_loss"] for x in self.train_step_outputs]).mean()
         self.log("train_loss", avg_loss, on_epoch=True, prog_bar=True)
+        self.train_step_outputs.clear()
+        
 
     def test_step(self, batch, batch_idx):
         x, y = batch['image'], batch['mask'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
         miou = self.metric(y_hat, y)
+        
+        self.test_step_outputs.append({
+            'test_miou':miou,
+            'test_loss':loss
+        })
         return {"y_hat": y_hat, "test_loss": loss, "test_miou": miou}
 
-    def test_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["test_loss"] for x in outputs]).mean()
-        avg_miou = torch.stack([x["test_miou"] for x in outputs]).mean()
+    def on_test_epoch_end(self):
+        avg_loss = torch.stack([x["test_loss"] for x in self.test_step_outputs]).mean()
+        avg_miou = torch.stack([x["test_miou"] for x in self.test_step_outputs]).mean()
         self.log("test_loss", avg_loss, on_epoch=True, prog_bar=True)
         self.log("test_miou", avg_miou*100., on_epoch=True, prog_bar=True)
-
+        self.test_step_outputs.clear()
+        
     def validation_step(self, batch, batch_idx):
         x, y = batch['image'], batch['mask'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        
         miou = self.metric(y_hat, y)
         self.validation_step_outputs.append({
             'val_miou':miou,
             'val_loss':loss
         })
-        return {"val_miou": miou}
+        return {"y_hat": y_hat, "val_loss": loss, "val_miou": miou}
 
     def on_validation_epoch_end(self):
         avg_loss = torch.stack([x["val_loss"] for x in self.validation_step_outputs]).mean()
