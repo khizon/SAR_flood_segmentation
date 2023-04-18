@@ -5,6 +5,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import segmentation_models_pytorch as smp
 import torch
 import numpy as np
+import wandb
 
 def seed_everything(seed=2**3):
     torch.manual_seed(seed)
@@ -53,7 +54,7 @@ class SegModule(LightningModule):
         x, y = batch['image'], batch['mask'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        miou = self.metric(y_hat, y)
+        miou = self.metric(y_hat, y.int())
         
         self.test_step_outputs.append({
             'test_miou':miou,
@@ -72,7 +73,7 @@ class SegModule(LightningModule):
         x, y = batch['image'], batch['mask'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        miou = self.metric(y_hat, y)
+        miou = self.metric(y_hat, y.int())
         self.validation_step_outputs.append({
             'val_miou':miou,
             'val_loss':loss
@@ -85,6 +86,7 @@ class SegModule(LightningModule):
         self.log("val_loss", avg_loss, on_epoch=True, prog_bar=True)
         self.log("val_miou", avg_miou*100., on_epoch=True, prog_bar=True)
         self.validation_step_outputs.clear()
+        
         
 
     

@@ -19,13 +19,15 @@ def s1_to_rgb(vv_image, vh_image):
 
 
 class ETCIDataset(Dataset):
-    def __init__(self, dataframe, split, debug=False, transform=None):
+    def __init__(self, dataframe, split, debug=False, batch_size=8, transform=None):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
+        self.batch_size=batch_size
         self.transform = transform
         
         if debug:
-            self.dataset = self.dataset.sample(8)
+            # Return only 1 batch worth of data
+            self.dataset = self.dataset.sample(self.batch_size)
 
     def __len__(self):
         return self.dataset.shape[0]
@@ -38,27 +40,21 @@ class ETCIDataset(Dataset):
         # load vv and vh images
         vv_image = imread(df_row["vv"], 0)[:,:,0] / 255.0
         vh_image = imread(df_row["vh"], 0)[:,:,0] / 255.0
+        flood_mask = imread(df_row["flood_label"], 0)[:,:,0] / 255.0
+        water = imread(df_row["water_body"], 0)[:,:,0] / 255.0
 
         # convert vv and vh images to rgb
         rgb_image = s1_to_rgb(vv_image, vh_image)
 
-        if self.split == "test":
-            # no flood mask should be available
-            example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
-        else:
-            # load ground truth flood mask
-            flood_mask = imread(df_row["flood_label"], 0)[:,:,0] / 255.0
-            # flood_mask = np.clip(flood_mask, 0,1)
+        # apply augmentations if specified
+        if self.transform:
+            augmented = self.transform(image=rgb_image, mask=flood_mask)
+            rgb_image = augmented["image"]
+            flood_mask = augmented["mask"]
 
-            # apply augmentations if specified
-            if self.transform:
-                augmented = self.transform(image=rgb_image, mask=flood_mask)
-                rgb_image = augmented["image"]
-                flood_mask = augmented["mask"]
-
-            example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
-            # example["image"] = rgb_image
-            example["mask"] = flood_mask.astype("float32")
+        example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
+        example["mask"] = flood_mask.astype("float32")
+        example['water'] = water.astype("float32")
 
         return example
     
@@ -71,9 +67,9 @@ class ETCIDataModule(LightningDataModule):
         self.debug=debug
         
     def prepare_data(self):
-        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug)
-        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val', self.debug)
-        self.test_dataset=ETCIDataset(self.path+'test.csv', 'val', self.debug)
+        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug, self.batch_size)
+        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val', self.debug, self.batch_size)
+        self.test_dataset=ETCIDataset(self.path+'test.csv', 'val', self.debug, self.batch_size)
         
     def setup(self, stage=None):
         self.prepare_data()
