@@ -17,7 +17,7 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
     # where dataset will be stored
-    parser.add_argument("--path", type=str, default="data/")
+    parser.add_argument("--path", type=str, default="../data/")
     
     #Model Hyperparameters
     parser.add_argument('--batch_size', type=int, default=8, metavar='N',
@@ -90,7 +90,7 @@ class LogPredictionsCallback(Callback):
         wandb_logger.log_table(key=f'SAR flood detection-{set}', columns=columns, data=data)
 
 if __name__ == '__main__':
-    # os.chdir('src')
+    os.chdir('src')
     args = get_args()
     print(args)
     print(os.getcwd())

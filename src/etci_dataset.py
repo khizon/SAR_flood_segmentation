@@ -38,10 +38,10 @@ class ETCIDataset(Dataset):
         df_row = self.dataset.iloc[index]
 
         # load vv and vh images
-        vv_image = imread(df_row["vv"], 0)[:,:,0] / 255.0
-        vh_image = imread(df_row["vh"], 0)[:,:,0] / 255.0
-        flood_mask = imread(df_row["flood_label"], 0)[:,:,0] / 255.0
-        water = imread(df_row["water_body"], 0)[:,:,0] / 255.0
+        vv_image = imread(df_row["vv_image_path"], as_gray=True)
+        vh_image = imread(df_row["vh_image_path"], as_gray=True)
+        flood_mask = imread(df_row["flood_label_path"], as_gray=True)
+        water = imread(df_row["water_body_label_path"], as_gray=True)
 
         # convert vv and vh images to rgb
         rgb_image = s1_to_rgb(vv_image, vh_image)
