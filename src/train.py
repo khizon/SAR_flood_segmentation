@@ -18,24 +18,30 @@ def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
     # where dataset will be stored
     parser.add_argument("--path", type=str, default="../data/")
+    # Model
+    parser.add_argument('--model', type=str, default='u-net')
+    parser.add_argument('--backbone', type=str, default='mobilenet_v2')
+    parser.add_argument('--pre_trained', default='no')
     
     #Model Hyperparameters
-    parser.add_argument('--batch_size', type=int, default=8, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=32, metavar='N',
                         help='input batch size for training (default: )')
     parser.add_argument('--max_epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 0)')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.0)')
+    
     # 16-bit fp model to reduce the size
     parser.add_argument("--precision", default=16)
     parser.add_argument("--accelerator", default='auto')
     parser.add_argument("--devices", default=1)
-    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--num_workers", type=int, default=0)
     
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
     
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)
     
     
     args = parser.parse_args()
@@ -65,7 +71,6 @@ class LogPredictionsCallback(Callback):
     def log_table(self, batch, outputs, set='val'):
         x, y, water = batch['image'], batch['mask'], batch['water']
         y_hat = outputs['y_hat']
-        miou = outputs[f'{set}_miou']
 
         n = x.size(dim=0)
 
@@ -97,17 +102,19 @@ if __name__ == '__main__':
     print(f'Pytorch {torch.__version__}')
     seed_everything(42, workers=True)
     
-    datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers, debug=args.debug)
+    datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers,
+                              debug=args.debug, transforms=args.transforms)
     datamodule.setup()
     
-    model = smp.Unet(
-        encoder_name='efficientnet-b7',
-        encoder_weights='imagenet',
-        in_channels=3,
-        classes=1
-    )
+    if args.model == 'u-net':
+        model = smp.Unet(
+            encoder_name= args.backbone,
+            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+            in_channels=3,
+            classes=1
+        )
     
-    wandb_logger = WandbLogger(project='sar_seg', log_model='all')
+    wandb_logger = WandbLogger(project='sar_seg', log_model='all', config=vars(args))
     
     callbacks = []
     model_checkpoint = ModelCheckpoint(
@@ -124,12 +131,9 @@ if __name__ == '__main__':
     
     if args.early_stop:
         early_stop_callback = EarlyStopping(monitor="val_miou",
-                                            min_delta=0.25, patience=5, verbose=False, mode="max")
+                                            min_delta=0.25, patience=10, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
-    
-    
-    
-    
+
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
                       precision=args.precision,
@@ -139,10 +143,10 @@ if __name__ == '__main__':
                       callbacks=callbacks,
                       deterministic=True)
     
-    unet_model = SegModule(model)
+    model = SegModule(model, device=args.devices)
     
-    trainer.fit(unet_model, datamodule=datamodule)
-    trainer.test(unet_model, datamodule=datamodule, ckpt_path='best')
+    trainer.fit(model, datamodule=datamodule)
+    trainer.test(model, datamodule=datamodule, ckpt_path='best')
     
     wandb.finish()
     

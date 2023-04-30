@@ -8,8 +8,12 @@ from skimage.io import imread
 import numpy as np
 import pandas as pd
 
+import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.sampler import WeightedRandomSampler
 from pytorch_lightning import LightningDataModule
+from torchvision.transforms import functional as TF
+from torchvision import transforms as T
 
 
 def s1_to_rgb(vv_image, vh_image):
@@ -17,13 +21,55 @@ def s1_to_rgb(vv_image, vh_image):
     rgb_image = np.stack((vv_image, vh_image, 1 - ratio_image), axis=2)
     return rgb_image
 
+def segTransformer(image, mask):
+    img_w, img_h, _ = image.shape
+    
+    image = TF.to_pil_image(image.astype("uint8"))
+    mask = TF.to_pil_image(mask.astype("uint8"))
+    #Random horizontal flipping:
+    if np.random.random() > 0.5:
+        image = TF.hflip(image)
+        mask = TF.hflip(mask)
+        
+    #Random rotate:
+    if np.random.random() > 0.5:
+        angle = np.random.uniform(-30, 30)
+        image = TF.rotate(image, angle, fill=(255,255,255))
+        mask = TF.rotate(mask, angle, fill=(0,))
+        
+    #Random Affine
+    if np.random.random() > 0.4:
+        affine_param = T.RandomAffine.get_params(
+            degrees = [-180, 180], translate = [0.3,0.3],  
+            img_size = [img_w, img_h], scale_ranges = [1, 1.3], 
+            shears = [2,2])
+        image = TF.affine(image, 
+                          affine_param[0], affine_param[1],
+                          affine_param[2], affine_param[3], fill=(255,255,255)
+                         )
+        mask = TF.affine(mask, 
+                         affine_param[0], affine_param[1],
+                         affine_param[2], affine_param[3], fill=(0,)
+                        )
+    
+    image = np.array(image)
+    mask = np.array(mask)
+    
+    
+    return {
+        'image': image,
+        'mask': mask
+    }
 
 class ETCIDataset(Dataset):
-    def __init__(self, dataframe, split, debug=False, batch_size=8, transform=None):
+    def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
         self.batch_size=batch_size
-        self.transform = transform
+        if transforms:
+            self.transform = segTransformer
+        else:
+            self.transform = None
         
         if debug:
             # Return only 1 batch worth of data
@@ -48,9 +94,9 @@ class ETCIDataset(Dataset):
 
         # apply augmentations if specified
         if self.transform:
-            augmented = self.transform(image=rgb_image, mask=flood_mask)
-            rgb_image = augmented["image"]
-            flood_mask = augmented["mask"]
+            augmented = self.transform(rgb_image, flood_mask)
+            rgb_image = augmented['image']
+            flood_mask = augmented['mask']
 
         example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
         example["mask"] = flood_mask.astype("float32")
@@ -58,29 +104,46 @@ class ETCIDataset(Dataset):
 
         return example
     
+    def get_classes(self):
+        class_counts = self.dataset['has_mask'].value_counts()
+        return [1/class_counts[i] for i in self.dataset.has_mask.values]
+        
+    
 class ETCIDataModule(LightningDataModule):
-    def __init__(self, path, batch_size, num_workers=0, debug=False, **kwargs):
+    def __init__(self, path, batch_size, num_workers=0, debug=False, transforms=False, **kwargs):
         super().__init__(**kwargs)
         self.path = path
         self.batch_size=batch_size
         self.num_workers=num_workers
         self.debug=debug
+        self.transforms=transforms
         
     def prepare_data(self):
-        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug, self.batch_size)
+        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug, self.batch_size, self.transforms)
         self.val_dataset=ETCIDataset(self.path+'val.csv', 'val', self.debug, self.batch_size)
         self.test_dataset=ETCIDataset(self.path+'test.csv', 'val', self.debug, self.batch_size)
         
     def setup(self, stage=None):
         self.prepare_data()
         
+    def collate_fn(self, batch):
+      return {
+          'image': torch.stack([x['image'] for x in batch]),
+          'mask': torch.tensor([x['mask'] for x in batch])
+    }
+        
     def train_dataloader(self):
+        sampler = WeightedRandomSampler(
+            weights=self.train_dataset.get_classes(),
+            num_samples=len(self.train_dataset),
+            replacement=True
+        )
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            shuffle=True,
-            pin_memory=True
+            pin_memory=True,
+            sampler=sampler,
         )
 
     def val_dataloader(self):

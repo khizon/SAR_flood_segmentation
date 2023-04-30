@@ -99,16 +99,21 @@ def create_df(main_dir, split="train"):
 #     return remove_indices
 
 def remove_binary(path):
-    img = imread(path, as_gray=True)
+    paths = [
+        path,
+        path.replace('vv', 'vh')
+    ]
     
-    image_values = list(np.unique(img))
-    binary_value_check = (
-        (image_values == [0, 1])
-        or (image_values == [0])
-        or (image_values == [1])
-    )
-    
-    if binary_value_check:
-        return True
-    else:
-        return False
+    for path in paths:
+        img = imread(path, as_gray=True)
+
+        image_values = list(np.unique(img))
+        binary_value_check = (
+            (image_values == [0, 1])
+            or (image_values == [0])
+            or (image_values == [1])
+        )
+
+        if binary_value_check:
+            return True
+    return False
