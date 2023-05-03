@@ -27,7 +27,7 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=32, metavar='N',
                         help='input batch size for training (default: )')
     parser.add_argument('--max_epochs', type=int, default=30, metavar='N',
-                        help='number of epochs to train (default: 0)')
+                        help='number of epochs to train (default: 30)')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.0)')
     
@@ -35,7 +35,7 @@ def get_args():
     parser.add_argument("--precision", default=16)
     parser.add_argument("--accelerator", default='auto')
     parser.add_argument("--devices", default=1)
-    parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument("--num_workers", type=int, default=4)
     
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
     
@@ -53,17 +53,11 @@ def get_args():
     return args
 
 class LogPredictionsCallback(Callback):
-    
-    def on_validation_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        """Called when the validation batch ends."""
-        if batch_idx == 0:
-            self.log_table(batch, outputs, set='val')
             
     def on_test_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         """Called when the test batch ends."""
-        if batch_idx == 0:
+        if (batch_idx%15) == 0:
             self.log_table(batch, outputs, set='test')
             
             
@@ -97,6 +91,7 @@ class LogPredictionsCallback(Callback):
 if __name__ == '__main__':
     os.chdir('src')
     args = get_args()
+    wandb_logger = WandbLogger(project='sar_seg', log_model='all', config=vars(args))
     print(args)
     print(os.getcwd())
     print(f'Pytorch {torch.__version__}')
@@ -114,15 +109,13 @@ if __name__ == '__main__':
             classes=1
         )
     
-    wandb_logger = WandbLogger(project='sar_seg', log_model='all', config=vars(args))
-    
     callbacks = []
     model_checkpoint = ModelCheckpoint(
             dirpath=os.path.join("checkpoints"),
             filename="sar-best-miou",
             save_top_k=1,
             verbose=True,
-            monitor='val_miou',
+            monitor='val_iou_f',
             mode='max',
         )
     callbacks.append(model_checkpoint)
@@ -130,8 +123,8 @@ if __name__ == '__main__':
     callbacks.append(log_predictions_callback)
     
     if args.early_stop:
-        early_stop_callback = EarlyStopping(monitor="val_miou",
-                                            min_delta=0.25, patience=10, verbose=False, mode="max")
+        early_stop_callback = EarlyStopping(monitor="val_iou_f",
+                                            min_delta=0.25, patience=20, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
 
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
@@ -143,7 +136,7 @@ if __name__ == '__main__':
                       callbacks=callbacks,
                       deterministic=True)
     
-    model = SegModule(model, device=args.devices)
+    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs)
     
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule, ckpt_path='best')

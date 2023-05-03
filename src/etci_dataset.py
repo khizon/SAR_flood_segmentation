@@ -126,12 +126,6 @@ class ETCIDataModule(LightningDataModule):
     def setup(self, stage=None):
         self.prepare_data()
         
-    def collate_fn(self, batch):
-      return {
-          'image': torch.stack([x['image'] for x in batch]),
-          'mask': torch.tensor([x['mask'] for x in batch])
-    }
-        
     def train_dataloader(self):
         sampler = WeightedRandomSampler(
             weights=self.train_dataset.get_classes(),
