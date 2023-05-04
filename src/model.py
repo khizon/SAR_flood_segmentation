@@ -15,7 +15,7 @@ def seed_everything(seed=2**3):
     torch.backends.cudnn.deterministic = True
 
 class SegModule(LightningModule):
-    def __init__(self, model, lr=1e-3, max_epochs=30, **kwargs):
+    def __init__(self, model, lr=1e-3, max_epochs=30, dropout=0.1, **kwargs):
         
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
@@ -29,9 +29,12 @@ class SegModule(LightningModule):
         self.train_step_outputs = []
         self.max_epochs=max_epochs
         self.lr = lr
+        self.dropout=torch.nn.Dropout(dropout)
         
     def forward(self, x):
-        return self.model(x)
+        y_hat = self.model(x)
+        y_hat = self.dropout(y_hat)
+        return y_hat
     
     def configure_optimizers(self):
         optimizer = Adam(self.parameters(), lr=self.lr)

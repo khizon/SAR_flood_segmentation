@@ -29,7 +29,8 @@ def get_args():
     parser.add_argument('--max_epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 30)')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
-                        help='learning rate (default: 0.0)')
+                        help='learning rate (default: 1e-3)')
+    parser.add_argument('--dropout', type=float, default=0.1)
     
     # 16-bit fp model to reduce the size
     parser.add_argument("--precision", default=16)
@@ -38,7 +39,6 @@ def get_args():
     parser.add_argument("--num_workers", type=int, default=4)
     
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
-    
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)
@@ -59,9 +59,7 @@ class LogPredictionsCallback(Callback):
         """Called when the test batch ends."""
         if (batch_idx%15) == 0:
             self.log_table(batch, outputs, set='test')
-            
-            
-            
+           
     def log_table(self, batch, outputs, set='val'):
         x, y, water = batch['image'], batch['mask'], batch['water']
         y_hat = outputs['y_hat']
@@ -124,7 +122,7 @@ if __name__ == '__main__':
     
     if args.early_stop:
         early_stop_callback = EarlyStopping(monitor="val_iou_f",
-                                            min_delta=0.25, patience=20, verbose=False, mode="max")
+                                            min_delta=0.25, patience=10, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
 
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
@@ -136,7 +134,7 @@ if __name__ == '__main__':
                       callbacks=callbacks,
                       deterministic=True)
     
-    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs)
+    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout)
     
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule, ckpt_path='best')

@@ -113,7 +113,14 @@ def remove_binary(path):
             or (image_values == [0])
             or (image_values == [1])
         )
-
+        
         if binary_value_check:
+            return True
+        
+        # Remove images that are largely water or invalid pixels
+        whites = np.sum(img==255)/(256**2)
+        blacks = np.sum(img==0)/(256**2)
+        
+        if (whites>0.95) or (blacks>0.95):
             return True
     return False
