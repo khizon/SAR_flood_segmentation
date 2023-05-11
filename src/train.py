@@ -18,9 +18,11 @@ def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
     # where dataset will be stored
     parser.add_argument("--path", type=str, default="../data/")
+    
     # Model
     parser.add_argument('--model', type=str, default='u-net')
     parser.add_argument('--backbone', type=str, default='mobilenet_v2')
+    parser.add_argument('--loss', type=str, default='BCE')
     parser.add_argument('--pre_trained', default='no')
     
     #Model Hyperparameters
@@ -28,7 +30,7 @@ def get_args():
                         help='input batch size for training (default: )')
     parser.add_argument('--max_epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 30)')
-    parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-5, metavar='LR',
                         help='learning rate (default: 1e-3)')
     parser.add_argument('--dropout', type=float, default=0.1)
     
@@ -113,7 +115,7 @@ if __name__ == '__main__':
             filename="sar-best-miou",
             save_top_k=1,
             verbose=True,
-            monitor='val_iou_f',
+            monitor='val_miou',
             mode='max',
         )
     callbacks.append(model_checkpoint)
@@ -121,7 +123,7 @@ if __name__ == '__main__':
     callbacks.append(log_predictions_callback)
     
     if args.early_stop:
-        early_stop_callback = EarlyStopping(monitor="val_iou_f",
+        early_stop_callback = EarlyStopping(monitor="val_miou",
                                             min_delta=0.25, patience=10, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
 
@@ -134,7 +136,7 @@ if __name__ == '__main__':
                       callbacks=callbacks,
                       deterministic=True)
     
-    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout)
+    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss)
     
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule, ckpt_path='best')

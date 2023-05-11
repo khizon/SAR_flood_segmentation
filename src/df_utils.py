@@ -101,26 +101,41 @@ def create_df(main_dir, split="train"):
 def remove_binary(path):
     paths = [
         path,
-        path.replace('vv', 'vh')
+        path.replace('vv', 'vh'),
+        path.replace('vv', 'water_body_label', 1).replace('_vv', ''),
+        path.replace('vv', 'flood_label', 1).replace('_vv', '')
     ]
     
-    for path in paths:
-        img = imread(path, as_gray=True)
+    for idx, path in enumerate(paths):
+        if idx < 2:
+            img = imread(path, as_gray=True)
 
-        image_values = list(np.unique(img))
-        binary_value_check = (
-            (image_values == [0, 1])
-            or (image_values == [0])
-            or (image_values == [1])
-        )
-        
-        if binary_value_check:
-            return True
-        
-        # Remove images that are largely water or invalid pixels
-        whites = np.sum(img==255)/(256**2)
-        blacks = np.sum(img==0)/(256**2)
-        
-        if (whites>0.95) or (blacks>0.95):
-            return True
+            image_values = list(np.unique(img))
+            binary_value_check = (
+                (image_values == [0, 1])
+                or (image_values == [0])
+                or (image_values == [1])
+            )
+
+            if binary_value_check:
+                return True
+
+            # Remove images that are largely water or invalid pixels
+            whites = np.sum(img==255)/(256**2)
+            blacks = np.sum(img==0)/(256**2)
+
+            if (whites>0.95) or (blacks>0.95):
+                return True
+        elif idx==2:
+            img = imread(path, as_gray=True)
+            img[img>=0.95] = 1
+            img[img<0.95] = 0
+            
+            mask = imread(paths[3], as_gray=True)
+            mask[mask>=0.95] = 1
+            mask[mask<0.95] = 0
+            
+            # Remove images that are all water but have "flood" masks
+            if (np.mean(img) == 1) and (np.mean(mask) != 0):
+                return True
     return False

@@ -15,13 +15,17 @@ def seed_everything(seed=2**3):
     torch.backends.cudnn.deterministic = True
 
 class SegModule(LightningModule):
-    def __init__(self, model, lr=1e-3, max_epochs=30, dropout=0.1, **kwargs):
+    def __init__(self, model, lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', **kwargs):
         
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
         
         self.model = model
-        self.loss = smp.losses.DiceLoss(mode="binary")
+        if loss == 'dice':
+            self.loss = smp.losses.DiceLoss(mode="binary")
+        else:
+            self.loss = smp.losses.SoftBCEWithLogitsLoss()
+        
         self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(), BinaryPrecision(), BinaryRecall(), BinaryF1Score()
         self.validation_step_outputs = []

@@ -22,10 +22,7 @@ def s1_to_rgb(vv_image, vh_image):
     return rgb_image
 
 def segTransformer(image, mask):
-    img_w, img_h, _ = image.shape
-    
-    image = TF.to_pil_image(image.astype("uint8"))
-    mask = TF.to_pil_image(mask.astype("uint8"))
+    _, img_w, img_h = image.shape
     #Random horizontal flipping:
     if np.random.random() > 0.5:
         image = TF.hflip(image)
@@ -34,26 +31,23 @@ def segTransformer(image, mask):
     #Random rotate:
     if np.random.random() > 0.5:
         angle = np.random.uniform(-30, 30)
-        image = TF.rotate(image, angle, fill=(255,255,255))
+        image = TF.rotate(image, angle, fill=(1,1,1))
         mask = TF.rotate(mask, angle, fill=(0,))
         
     #Random Affine
     if np.random.random() > 0.4:
         affine_param = T.RandomAffine.get_params(
-            degrees = [-180, 180], translate = [0.3,0.3],  
+            degrees = [-30, 30], translate = [0.3,0.3],  
             img_size = [img_w, img_h], scale_ranges = [1, 1.3], 
             shears = [2,2])
         image = TF.affine(image, 
                           affine_param[0], affine_param[1],
-                          affine_param[2], affine_param[3], fill=(255,255,255)
+                          affine_param[2], affine_param[3], fill=(1,1,1)
                          )
         mask = TF.affine(mask, 
                          affine_param[0], affine_param[1],
                          affine_param[2], affine_param[3], fill=(0,)
                         )
-    
-    image = np.array(image)
-    mask = np.array(mask)
     
     
     return {
@@ -91,6 +85,10 @@ class ETCIDataset(Dataset):
 
         # convert vv and vh images to rgb
         rgb_image = s1_to_rgb(vv_image, vh_image)
+        
+        # convert to tensor
+        rgb_image = TF.to_tensor(rgb_image).float()
+        flood_mask = TF.to_tensor(flood_mask).float()
 
         # apply augmentations if specified
         if self.transform:
@@ -98,9 +96,9 @@ class ETCIDataset(Dataset):
             rgb_image = augmented['image']
             flood_mask = augmented['mask']
 
-        example["image"] = rgb_image.transpose((2, 0, 1)).astype("float32")
-        example["mask"] = flood_mask.astype("float32")
-        example['water'] = water.astype("float32")
+        example["image"] = rgb_image
+        example["mask"] = flood_mask.squeeze()
+        example['water'] = water
 
         return example
     
