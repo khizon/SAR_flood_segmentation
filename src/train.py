@@ -22,7 +22,7 @@ def get_args():
     # Model
     parser.add_argument('--model', type=str, default='u-net')
     parser.add_argument('--backbone', type=str, default='mobilenet_v2')
-    parser.add_argument('--loss', type=str, default='BCE')
+    parser.add_argument('--loss', type=str, default='dice')
     parser.add_argument('--pre_trained', default='no')
     
     #Model Hyperparameters
@@ -59,7 +59,7 @@ class LogPredictionsCallback(Callback):
     def on_test_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         """Called when the test batch ends."""
-        if (batch_idx%15) == 0:
+        if batch_idx==0:
             self.log_table(batch, outputs, set='test')
            
     def log_table(self, batch, outputs, set='val'):
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     
     if args.early_stop:
         early_stop_callback = EarlyStopping(monitor="val_miou",
-                                            min_delta=0.25, patience=10, verbose=False, mode="max")
+                                            min_delta=0.25, patience=5, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
 
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,

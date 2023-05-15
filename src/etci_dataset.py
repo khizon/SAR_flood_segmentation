@@ -21,47 +21,23 @@ def s1_to_rgb(vv_image, vh_image):
     rgb_image = np.stack((vv_image, vh_image, 1 - ratio_image), axis=2)
     return rgb_image
 
-def segTransformer(image, mask):
-    _, img_w, img_h = image.shape
-    #Random horizontal flipping:
-    if np.random.random() > 0.5:
-        image = TF.hflip(image)
-        mask = TF.hflip(mask)
-        
-    #Random rotate:
-    if np.random.random() > 0.5:
-        angle = np.random.uniform(-30, 30)
-        image = TF.rotate(image, angle, fill=(1,1,1))
-        mask = TF.rotate(mask, angle, fill=(0,))
-        
-    #Random Affine
-    if np.random.random() > 0.4:
-        affine_param = T.RandomAffine.get_params(
-            degrees = [-30, 30], translate = [0.3,0.3],  
-            img_size = [img_w, img_h], scale_ranges = [1, 1.3], 
-            shears = [2,2])
-        image = TF.affine(image, 
-                          affine_param[0], affine_param[1],
-                          affine_param[2], affine_param[3], fill=(1,1,1)
-                         )
-        mask = TF.affine(mask, 
-                         affine_param[0], affine_param[1],
-                         affine_param[2], affine_param[3], fill=(0,)
-                        )
-    
-    
-    return {
-        'image': image,
-        'mask': mask
-    }
 
 class ETCIDataset(Dataset):
     def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
+        self.dataset = self.dataset[self.dataset['invalid']!=True]
         self.batch_size=batch_size
         if transforms:
-            self.transform = segTransformer
+            self.transform = T.Compose([
+                T.RandomHorizontalFlip(0.5),
+                T.RandomApply([
+                    T.RandomRotation([-90,90], fill=(1,1,1,0))
+                    ], 0.5),
+                T.RandomApply([
+                    T.ElasticTransform(alpha=120.0, sigma=120 * 0.05, fill=(1,1,1,0))
+                    ], 0.4)
+            ])
         else:
             self.transform = None
         
@@ -92,9 +68,10 @@ class ETCIDataset(Dataset):
 
         # apply augmentations if specified
         if self.transform:
-            augmented = self.transform(rgb_image, flood_mask)
-            rgb_image = augmented['image']
-            flood_mask = augmented['mask']
+            to_aug = torch.cat([rgb_image, flood_mask])
+            augmented = self.transform(to_aug)
+            rgb_image = augmented[:3,:,:]
+            flood_mask = augmented[3,:,:,]
 
         example["image"] = rgb_image
         example["mask"] = flood_mask.squeeze()
