@@ -132,7 +132,16 @@ def remove_binary(path):
             img[img>=0.95] = 1
             img[img<0.95] = 0
             
-            # Remove images that are all water
-            if (np.mean(img) == 1):
+            # Mask label
+            mask = imread(paths[3], as_gray=True)
+            mask[mask>=0.95] = 1
+            mask[mask<0.95] = 0
+
+            # # Remove images that are all water
+            # if (np.mean(img) == 1):
+            #     return True
+            
+            # Remove images that are all water but has flood mask
+            if (np.mean(img) == 1) and (np.mean(mask) > 0):
                 return True
     return False

@@ -43,8 +43,7 @@ def get_args():
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
-    parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)
-    
+    parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)   
     
     args = parser.parse_args()
     

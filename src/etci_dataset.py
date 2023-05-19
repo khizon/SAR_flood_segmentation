@@ -12,15 +12,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler
 from pytorch_lightning import LightningDataModule
-from torchvision.transforms import functional as TF
-from torchvision import transforms as T
+# from torchvision.transforms import functional as TF
+# from torchvision import transforms as T
+import albumentations as A
 
 
 def s1_to_rgb(vv_image, vh_image):
     ratio_image = np.clip(np.nan_to_num(vh_image / vv_image, 0), 0, 1)
     rgb_image = np.stack((vv_image, vh_image, 1 - ratio_image), axis=2)
     return rgb_image
-
 
 class ETCIDataset(Dataset):
     def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False):
@@ -29,15 +29,16 @@ class ETCIDataset(Dataset):
         self.dataset = self.dataset[self.dataset['invalid']!=True]
         self.batch_size=batch_size
         if transforms:
-            self.transform = T.Compose([
-                T.RandomHorizontalFlip(0.5),
-                T.RandomApply([
-                    T.RandomRotation([-90,90], fill=(1,1,1,0))
-                    ], 0.5),
-                T.RandomApply([
-                    T.ElasticTransform(alpha=120.0, sigma=120 * 0.05, fill=(1,1,1,0))
-                    ], 0.4)
-            ])
+            # define augmentation transforms
+            self.transform = A.Compose(
+                [
+                    A.HorizontalFlip(p=0.5),
+                    A.Rotate(270),
+                    A.ElasticTransform(
+                        p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
+                    ),
+                ]
+            )
         else:
             self.transform = None
         
@@ -61,20 +62,15 @@ class ETCIDataset(Dataset):
 
         # convert vv and vh images to rgb
         rgb_image = s1_to_rgb(vv_image, vh_image)
-        
-        # convert to tensor
-        rgb_image = TF.to_tensor(rgb_image).float()
-        flood_mask = TF.to_tensor(flood_mask).float()
 
         # apply augmentations if specified
         if self.transform:
-            to_aug = torch.cat([rgb_image, flood_mask])
-            augmented = self.transform(to_aug)
-            rgb_image = augmented[:3,:,:]
-            flood_mask = augmented[3,:,:,]
+            augmented = self.transform(image=rgb_image, mask=flood_mask)
+            rgb_image = augmented['image']
+            flood_mask = augmented['mask']
 
-        example["image"] = rgb_image
-        example["mask"] = flood_mask.squeeze()
+        example["image"] = torch.from_numpy(rgb_image).permute(2,0,1).float()
+        example["mask"] = torch.from_numpy(flood_mask).float()
         example['water'] = water
 
         return example
