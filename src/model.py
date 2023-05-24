@@ -23,8 +23,10 @@ class SegModule(LightningModule):
         self.model = model
         if loss == 'dice':
             self.loss = smp.losses.DiceLoss(mode="binary")
-        else:
+        elif loss == 'BCE':
             self.loss = smp.losses.SoftBCEWithLogitsLoss()
+        elif loss == 'focal':
+            self.loss = smp.losses.FocalLoss(mode="binary")
         
         self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(), BinaryPrecision(), BinaryRecall(), BinaryF1Score()

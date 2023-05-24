@@ -107,6 +107,28 @@ if __name__ == '__main__':
             in_channels=3,
             classes=1
         )
+    elif args.model == 'u-net++':
+        model = smp.UnetPlusPlus(
+            encoder_name= args.backbone,
+            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+            in_channels=3,
+            classes=1
+        )
+        
+    elif args.model == 'ma-net':
+        model = smp.MAnet(
+            encoder_name= args.backbone,
+            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+            in_channels=3,
+            classes=1
+        )
+    elif args.model == 'deeplabv3+':
+        model = smp.DeepLabV3Plus(
+            encoder_name= args.backbone,
+            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+            in_channels=3,
+            classes=1
+        )
     
     callbacks = []
     model_checkpoint = ModelCheckpoint(
