@@ -18,7 +18,7 @@ def has_mask(mask_path):
     img[img>=0.95] = 1
     img[img<0.95] = 0
 
-    if np.mean(img) > 0.0:
+    if np.mean(img) > 0:
         return True
     else:
         return False
@@ -98,12 +98,13 @@ def create_df(main_dir, split="train"):
 #             remove_indices.append(i)
 #     return remove_indices
 
-def remove_binary(path):
+def remove_binary(row):
+    row['invalid'] = False
     paths = [
-        path,
-        path.replace('vv', 'vh'),
-        path.replace('vv', 'water_body_label', 1).replace('_vv', ''),
-        path.replace('vv', 'flood_label', 1).replace('_vv', '')
+        row['vv_image_path'],
+        row['vh_image_path'],
+        row['water_body_label_path'],
+        row['flood_label_path']
     ]
     
     for idx, path in enumerate(paths):
@@ -118,30 +119,23 @@ def remove_binary(path):
             )
 
             if binary_value_check:
-                return True
+                row['invalid'] = True
 
             # Remove images that are largely water or invalid pixels
-            whites = np.sum(img==255)/(256**2)
+            whites = np.sum(img==1)/(256**2)
             blacks = np.sum(img==0)/(256**2)
 
             if (whites>0.95) or (blacks>0.95):
-                return True
+                row['invalid'] = True
         elif idx==2:
             # Water label
             img = imread(path, as_gray=True)
             img[img>=0.95] = 1
             img[img<0.95] = 0
-            
-            # Mask label
-            mask = imread(paths[3], as_gray=True)
-            mask[mask>=0.95] = 1
-            mask[mask<0.95] = 0
 
-            # # Remove images that are all water
-            # if (np.mean(img) == 1):
-            #     return True
-            
-            # Remove images that are all water but has flood mask
-            if (np.mean(img) == 1) and (np.mean(mask) > 0):
-                return True
-    return False
+            # Remove images that are all water
+            if (np.mean(img) > 0.95):
+                row['invalid'] = True
+        
+    return row
+    

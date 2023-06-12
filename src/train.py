@@ -90,7 +90,6 @@ class LogPredictionsCallback(Callback):
 if __name__ == '__main__':
     os.chdir('src')
     args = get_args()
-    wandb_logger = WandbLogger(project='sar_seg', log_model='all', config=vars(args))
     print(args)
     print(os.getcwd())
     print(f'Pytorch {torch.__version__}')
@@ -129,6 +128,13 @@ if __name__ == '__main__':
             in_channels=3,
             classes=1
         )
+    elif args.model == 'fpn':
+        model = smp.FPN(
+            encoder_name= args.backbone,
+            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+            in_channels=3,
+            classes=1
+        )
     
     callbacks = []
     model_checkpoint = ModelCheckpoint(
@@ -147,17 +153,27 @@ if __name__ == '__main__':
         early_stop_callback = EarlyStopping(monitor="val_miou",
                                             min_delta=0.25, patience=5, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
-
+    
+    # Define Total Model
+    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss)
+    
+    args.total_params = sum(
+            param.numel() for param in model.parameters()
+        )
+    args.trainable_params = sum(
+            p.numel() for p in model.parameters() if p.requires_grad
+        )
+    
+    wandb_logger = WandbLogger(project='sar_seg', log_model='all', config=vars(args))
+    
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
                       precision=args.precision,
                       max_epochs=args.max_epochs,
                       logger=wandb_logger if args.wandb else None,
                       gradient_clip_val=0.5,
-                      callbacks=callbacks,
-                      deterministic=True)
+                      callbacks=callbacks)
     
-    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss)
     
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule, ckpt_path='best')

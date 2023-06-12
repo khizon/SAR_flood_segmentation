@@ -26,7 +26,10 @@ class ETCIDataset(Dataset):
     def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
-        self.dataset = self.dataset[self.dataset['invalid']!=True]
+        self.dataset = self.dataset[
+            (self.dataset['invalid']!=True) &
+            (self.dataset['has_mask']==True)
+           ]
         self.batch_size=batch_size
         if transforms:
             # define augmentation transforms
@@ -37,6 +40,8 @@ class ETCIDataset(Dataset):
                     A.ElasticTransform(
                         p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
                     ),
+                    A.GridDistortion(p=0.4),
+                    A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
                 ]
             )
         else:
@@ -76,8 +81,8 @@ class ETCIDataset(Dataset):
         return example
     
     def get_classes(self):
-        class_counts = self.dataset['has_mask'].value_counts()
-        return [1/class_counts[i] for i in self.dataset.has_mask.values]
+        class_counts = self.dataset['region'].value_counts()
+        return [1/class_counts[i] for i in self.dataset.region.values]
         
     
 class ETCIDataModule(LightningDataModule):
@@ -116,7 +121,7 @@ class ETCIDataModule(LightningDataModule):
             self.val_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            shuffle=True,
+            shuffle=False,
             pin_memory=True
         )
     
@@ -125,6 +130,6 @@ class ETCIDataModule(LightningDataModule):
             self.test_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            shuffle=True,
+            shuffle=False,
             pin_memory=True
         )

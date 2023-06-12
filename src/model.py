@@ -12,7 +12,19 @@ def seed_everything(seed=2**3):
     torch.cuda.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.deterministic = True
+
+class CombinedLoss(torch.nn.Module):
+    def __init__(self, mode="binary", gamma=2, alpha=0.5):
+        super(CombinedLoss, self).__init__()
+        self.dice_loss = smp.losses.DiceLoss(mode=mode)
+        self.focal_loss = smp.losses.FocalLoss(mode=mode, gamma=gamma, alpha=alpha)
+
+    def forward(self, pred, target):
+        dice_loss = self.dice_loss(pred, target)
+        focal_loss = self.focal_loss(pred, target)
+        combined_loss = (dice_loss + focal_loss) / 2.0
+        return combined_loss
 
 class SegModule(LightningModule):
     def __init__(self, model, lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', **kwargs):
@@ -27,6 +39,9 @@ class SegModule(LightningModule):
             self.loss = smp.losses.SoftBCEWithLogitsLoss()
         elif loss == 'focal':
             self.loss = smp.losses.FocalLoss(mode="binary")
+        elif loss == 'combined':
+            self.loss = CombinedLoss()
+            
         
         self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(), BinaryPrecision(), BinaryRecall(), BinaryF1Score()
@@ -36,6 +51,7 @@ class SegModule(LightningModule):
         self.max_epochs=max_epochs
         self.lr = lr
         self.dropout=torch.nn.Dropout(dropout)
+
         
     def forward(self, x):
         y_hat = self.model(x)
