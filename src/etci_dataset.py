@@ -27,8 +27,7 @@ class ETCIDataset(Dataset):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
         self.dataset = self.dataset[
-            (self.dataset['invalid']!=True) &
-            (self.dataset['has_mask']==True)
+            (self.dataset['invalid']!=True)
            ]
         self.batch_size=batch_size
         if transforms:
@@ -81,8 +80,8 @@ class ETCIDataset(Dataset):
         return example
     
     def get_classes(self):
-        class_counts = self.dataset['region'].value_counts()
-        return [1/class_counts[i] for i in self.dataset.region.values]
+        class_counts = self.dataset['has_mask'].value_counts()
+        return [1/class_counts[i] for i in self.dataset.has_mask.values]
         
     
 class ETCIDataModule(LightningDataModule):

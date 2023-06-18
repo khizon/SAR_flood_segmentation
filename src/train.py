@@ -151,7 +151,7 @@ if __name__ == '__main__':
     
     if args.early_stop:
         early_stop_callback = EarlyStopping(monitor="val_miou",
-                                            min_delta=0.25, patience=5, verbose=False, mode="max")
+                                            min_delta=0.25, patience=10, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
     
     # Define Total Model
