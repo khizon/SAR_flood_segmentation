@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 from etci_dataset import ETCIDataset, ETCIDataModule
+from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 from model import SegModule
 from utils import *
 import segmentation_models_pytorch as smp
@@ -50,6 +51,10 @@ def get_args():
     for k in args.__dict__:
         if args.__dict__[k] is None:
             args.__dict__[k] = True
+            
+    if 'segformer' in args.__dict__['model']:
+        args.__dict__['backbone'] = None
+        args.__dict__['pre_trained'] = 'ade-512-512'
 
     return args
 
@@ -87,6 +92,35 @@ class LogPredictionsCallback(Callback):
                     for vv_i, vh_i, y_i, yhat_i, w_i in list(zip(vv_images, vh_images, labels, preds, water_labels))]
         wandb_logger.log_table(key=f'SAR flood detection-{set}', columns=columns, data=data)
 
+def create_model(args):
+    
+    model_class = {
+        "u-net": smp.Unet,
+        "u-net++": smp.UnetPlusPlus,
+        "ma-net": smp.MAnet,
+        "deeplabv3+": smp.DeepLabV3Plus,
+        "fpn": smp.FPN
+    }
+    
+    if args.model in model_class.keys():
+        model = model_class[args.model](
+            encoder_name= args.backbone,
+            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+            in_channels=3,
+            classes=1
+        )
+        
+    elif 'segformer' in args.model:
+        id2label = {'0': 'flood'}
+        label2id = {v:k for k, v in id2label.items()}
+        model_weights = f'nvidia/{args.model}-finetuned-{args.pre_trained}'
+
+        model = SegformerForSemanticSegmentation.from_pretrained(model_weights, ignore_mismatched_sizes=True,
+                                                                num_labels=len(id2label), id2label=id2label, label2id=label2id,
+                                                                reshape_last_stage=True)
+    
+    return model
+
 if __name__ == '__main__':
     os.chdir('src')
     args = get_args()
@@ -99,42 +133,43 @@ if __name__ == '__main__':
                               debug=args.debug, transforms=args.transforms)
     datamodule.setup()
     
-    if args.model == 'u-net':
-        model = smp.Unet(
-            encoder_name= args.backbone,
-            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
-            classes=1
-        )
-    elif args.model == 'u-net++':
-        model = smp.UnetPlusPlus(
-            encoder_name= args.backbone,
-            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
-            classes=1
-        )
+#     if args.model == 'u-net':
+#         model = smp.Unet(
+#             encoder_name= args.backbone,
+#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+#             in_channels=3,
+#             classes=1
+#         )
+#     elif args.model == 'u-net++':
+#         model = smp.UnetPlusPlus(
+#             encoder_name= args.backbone,
+#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+#             in_channels=3,
+#             classes=1
+#         )
         
-    elif args.model == 'ma-net':
-        model = smp.MAnet(
-            encoder_name= args.backbone,
-            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
-            classes=1
-        )
-    elif args.model == 'deeplabv3+':
-        model = smp.DeepLabV3Plus(
-            encoder_name= args.backbone,
-            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
-            classes=1
-        )
-    elif args.model == 'fpn':
-        model = smp.FPN(
-            encoder_name= args.backbone,
-            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
-            classes=1
-        )
+#     elif args.model == 'ma-net':
+#         model = smp.MAnet(
+#             encoder_name= args.backbone,
+#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+#             in_channels=3,
+#             classes=1
+#         )
+#     elif args.model == 'deeplabv3+':
+#         model = smp.DeepLabV3Plus(
+#             encoder_name= args.backbone,
+#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+#             in_channels=3,
+#             classes=1
+#         )
+#     elif args.model == 'fpn':
+#         model = smp.FPN(
+#             encoder_name= args.backbone,
+#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+#             in_channels=3,
+#             classes=1
+#         )
+    model = create_model(args)
     
     callbacks = []
     model_checkpoint = ModelCheckpoint(
@@ -145,6 +180,7 @@ if __name__ == '__main__':
             monitor='val_miou',
             mode='max',
         )
+    
     callbacks.append(model_checkpoint)
     log_predictions_callback = LogPredictionsCallback()
     callbacks.append(log_predictions_callback)
@@ -155,7 +191,7 @@ if __name__ == '__main__':
         callbacks.append(early_stop_callback)
     
     # Define Total Model
-    model = SegModule(model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss)
+    model = SegModule(model, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss)
     
     args.total_params = sum(
             param.numel() for param in model.parameters()

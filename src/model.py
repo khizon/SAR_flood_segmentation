@@ -27,12 +27,14 @@ class CombinedLoss(torch.nn.Module):
         return combined_loss
 
 class SegModule(LightningModule):
-    def __init__(self, model, lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', **kwargs):
+    def __init__(self, model, model_class='u-net', lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', **kwargs):
         
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
         
         self.model = model
+        self.model_class = model_class
+        
         if loss == 'dice':
             self.loss = smp.losses.DiceLoss(mode="binary")
         elif loss == 'BCE':
@@ -54,7 +56,12 @@ class SegModule(LightningModule):
 
         
     def forward(self, x):
-        y_hat = self.model(x)
+        if 'segformer' in self.model_class:
+            outputs = self.model(pixel_values=x)
+            # Upsample logits to 256 x 256
+            y_hat = torch.nn.functional.interpolate(outputs.logits, size=(256,256), mode="bilinear", align_corners=False)
+        else:
+            y_hat = self.model(x)
         y_hat = self.dropout(y_hat)
         return y_hat
     
