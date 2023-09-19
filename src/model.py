@@ -6,6 +6,7 @@ import segmentation_models_pytorch as smp
 import torch
 import numpy as np
 import wandb
+from transformers import AutoImageProcessor
 
 def seed_everything(seed=2**3):
     torch.manual_seed(seed)
@@ -14,9 +15,9 @@ def seed_everything(seed=2**3):
     random.seed(seed)
     # torch.backends.cudnn.deterministic = True
 
-class CombinedLoss(torch.nn.Module):
+class FocalDiceLoss(torch.nn.Module):
     def __init__(self, mode="binary", gamma=2, alpha=0.5):
-        super(CombinedLoss, self).__init__()
+        super(FocalDiceLoss, self).__init__()
         self.dice_loss = smp.losses.DiceLoss(mode=mode)
         self.focal_loss = smp.losses.FocalLoss(mode=mode, gamma=gamma, alpha=alpha)
 
@@ -24,6 +25,18 @@ class CombinedLoss(torch.nn.Module):
         dice_loss = self.dice_loss(pred, target)
         focal_loss = self.focal_loss(pred, target)
         combined_loss = (dice_loss + focal_loss) / 2.0
+        return combined_loss
+    
+class BCEDiceLoss(torch.nn.Module):
+    def __init__(self, mode="binary"):
+        super(BCEDiceLoss, self).__init__()
+        self.dice_loss = smp.losses.DiceLoss(mode=mode)
+        self.BCE_loss = smp.losses.SoftBCEWithLogitsLoss()
+
+    def forward(self, pred, target):
+        dice_loss = self.dice_loss(pred, target)
+        bce_loss = self.BCE_loss(pred, target)
+        combined_loss = (dice_loss + bce_loss) / 2.0
         return combined_loss
 
 class SegModule(LightningModule):
@@ -41,10 +54,11 @@ class SegModule(LightningModule):
             self.loss = smp.losses.SoftBCEWithLogitsLoss()
         elif loss == 'focal':
             self.loss = smp.losses.FocalLoss(mode="binary")
-        elif loss == 'combined':
-            self.loss = CombinedLoss()
-            
-        
+        elif loss == 'Focal+Dice':
+            self.loss = FocalDiceLoss()
+        elif loss == 'BCE+Dice':
+            self.loss = BCEDiceLoss()
+
         self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(), BinaryPrecision(), BinaryRecall(), BinaryF1Score()
         self.validation_step_outputs = []
@@ -66,7 +80,7 @@ class SegModule(LightningModule):
         return y_hat
     
     def configure_optimizers(self):
-        optimizer = Adam(self.parameters(), lr=self.lr)
+        optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
         scheduler = CosineAnnealingLR(optimizer, T_max=self.max_epochs)
         return [optimizer], [scheduler]
     

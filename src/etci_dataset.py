@@ -23,7 +23,7 @@ def s1_to_rgb(vv_image, vh_image):
     return rgb_image
 
 class ETCIDataset(Dataset):
-    def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False):
+    def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False, processor=None):
         self.split = split
         self.dataset = pd.read_csv(dataframe)
         self.dataset = self.dataset[
@@ -49,6 +49,7 @@ class ETCIDataset(Dataset):
         if debug:
             # Return only 1 batch worth of data
             self.dataset = self.dataset.sample(self.batch_size)
+        self.processor = processor
 
     def __len__(self):
         return self.dataset.shape[0]
@@ -73,7 +74,10 @@ class ETCIDataset(Dataset):
             rgb_image = augmented['image']
             flood_mask = augmented['mask']
 
-        example["image"] = torch.from_numpy(rgb_image).permute(2,0,1).float()
+        if self.processor:
+            example["image"] = self.processor(images=rgb_image, return_tensors='pt')['pixel_values'].squeeze()
+        else:
+            example["image"] = torch.from_numpy(rgb_image).permute(2,0,1).float()
         example["mask"] = torch.from_numpy(flood_mask).float()
         example['water'] = water
 
@@ -85,18 +89,19 @@ class ETCIDataset(Dataset):
         
     
 class ETCIDataModule(LightningDataModule):
-    def __init__(self, path, batch_size, num_workers=0, debug=False, transforms=False, **kwargs):
+    def __init__(self, path, batch_size, num_workers=0, debug=False, transforms=False, processor=None, **kwargs):
         super().__init__(**kwargs)
         self.path = path
         self.batch_size=batch_size
         self.num_workers=num_workers
         self.debug=debug
         self.transforms=transforms
+        self.processor=processor
         
     def prepare_data(self):
-        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug, self.batch_size, self.transforms)
-        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val', self.debug, self.batch_size)
-        self.test_dataset=ETCIDataset(self.path+'test.csv', 'val', self.debug, self.batch_size)
+        self.train_dataset=ETCIDataset(self.path+'train.csv', 'train', self.debug, self.batch_size, self.transforms, self.processor)
+        self.val_dataset=ETCIDataset(self.path+'val.csv', 'val', self.debug, self.batch_size, self.processor)
+        self.test_dataset=ETCIDataset(self.path+'test.csv', 'val', self.debug, self.batch_size, self.processor)
         
     def setup(self, stage=None):
         self.prepare_data()

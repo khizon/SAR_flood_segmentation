@@ -43,7 +43,12 @@ def get_args():
     
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction)
+    
+    # Early Stopping
+    parser.add_argument("--delta", default=0.01)
+    parser.add_argument("--patience", default=10)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
+    
     parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)   
     
     args = parser.parse_args()
@@ -101,6 +106,7 @@ def create_model(args):
         "deeplabv3+": smp.DeepLabV3Plus,
         "fpn": smp.FPN
     }
+    image_processor = None
     
     if args.model in model_class.keys():
         model = model_class[args.model](
@@ -118,8 +124,12 @@ def create_model(args):
         model = SegformerForSemanticSegmentation.from_pretrained(model_weights, ignore_mismatched_sizes=True,
                                                                 num_labels=len(id2label), id2label=id2label, label2id=label2id,
                                                                 reshape_last_stage=True)
+        # Freeze encoder
+        for param in model.segformer.encoder.parameters():
+            param.requires_grad = False
+        image_processor = AutoImageProcessor.from_pretrained(model_weights)
     
-    return model
+    return model, image_processor
 
 if __name__ == '__main__':
     os.chdir('src')
@@ -129,47 +139,11 @@ if __name__ == '__main__':
     print(f'Pytorch {torch.__version__}')
     seed_everything(42, workers=True)
     
+    model, image_processor = create_model(args)
+
     datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers,
                               debug=args.debug, transforms=args.transforms)
     datamodule.setup()
-    
-#     if args.model == 'u-net':
-#         model = smp.Unet(
-#             encoder_name= args.backbone,
-#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-#             in_channels=3,
-#             classes=1
-#         )
-#     elif args.model == 'u-net++':
-#         model = smp.UnetPlusPlus(
-#             encoder_name= args.backbone,
-#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-#             in_channels=3,
-#             classes=1
-#         )
-        
-#     elif args.model == 'ma-net':
-#         model = smp.MAnet(
-#             encoder_name= args.backbone,
-#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-#             in_channels=3,
-#             classes=1
-#         )
-#     elif args.model == 'deeplabv3+':
-#         model = smp.DeepLabV3Plus(
-#             encoder_name= args.backbone,
-#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-#             in_channels=3,
-#             classes=1
-#         )
-#     elif args.model == 'fpn':
-#         model = smp.FPN(
-#             encoder_name= args.backbone,
-#             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-#             in_channels=3,
-#             classes=1
-#         )
-    model = create_model(args)
     
     callbacks = []
     model_checkpoint = ModelCheckpoint(
@@ -187,7 +161,7 @@ if __name__ == '__main__':
     
     if args.early_stop:
         early_stop_callback = EarlyStopping(monitor="val_miou",
-                                            min_delta=0.25, patience=10, verbose=False, mode="max")
+                                            min_delta=args.delta, patience=args.patience, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
     
     # Define Total Model
