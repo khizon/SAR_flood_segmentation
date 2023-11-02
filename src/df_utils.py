@@ -138,4 +138,50 @@ def remove_binary(row):
                 row['invalid'] = True
         
     return row
+
+def create_df_sen1floods11():
+    # Define the directory path
+    directory_path = "../sen1floods11/S1Hand"
+
+    # List all files in the directory
+    all_files = os.listdir(directory_path)
+    
+    # Initialize empty lists to store file paths and regions
+    image_paths = []
+    flood_label_paths = []
+    water_body_label_paths = []
+    regions = []
+
+    # Iterate through all files and extract information
+    for file in all_files:
+        if file.endswith("_S1Hand.tif"):
+            # Extract region from the file name
+            region = file.split('_')[0]
+            # Create file paths
+            image_path = os.path.join(directory_path, file)
+            flood_label_path = os.path.join(directory_path, file.replace("_S1Hand.tif", "_LabelHand.tif"))
+            water_body_label_path = os.path.join(directory_path, file.replace("_S1Hand.tif", "_JRCWaterHand.tif"))
+            # Append information to lists
+            image_paths.append(image_path)
+            flood_label_paths.append(flood_label_path)
+            water_body_label_paths.append(water_body_label_path)
+            regions.append(region)
+
+    # Create a DataFrame
+    data = {
+        'image_path': image_paths,
+        'flood_label_path': flood_label_paths,
+        'water_body_label_path': water_body_label_paths,
+        'region': regions
+    }
+    df = pd.DataFrame(data)
+    
+    # Define the CSV file path
+    csv_file_path = os.path.join(os.path.dirname(directory_path), 'data.csv')
+
+    # Save the DataFrame as CSV
+    df.to_csv(csv_file_path, index=False)
+
+
+
     

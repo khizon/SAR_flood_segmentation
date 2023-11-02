@@ -12,8 +12,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler
 from pytorch_lightning import LightningDataModule
-# from torchvision.transforms import functional as TF
-# from torchvision import transforms as T
 import albumentations as A
 
 
