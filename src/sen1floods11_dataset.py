@@ -15,7 +15,10 @@ class Sen1Floods11Dataset(Dataset):
         self.dataset = pd.read_csv(DF_PATH)
         self.dataset = self.dataset[self.dataset['Split']==split]
         self.batch_size=batch_size
-        self.ROOT = os.path.dirname(os.getcwd())
+        self.ROOT = os.getcwd()
+        
+        if len(self.dataset) < self.batch_size:
+            self.batch_size = len(self.dataset)
         
         if transforms:
             # define augmentation transforms
@@ -73,6 +76,15 @@ class Sen1Floods11Dataset(Dataset):
         water = imread(water_path) if water_path else None
         otsu = imread(otsu_path) if otsu_path else None
 
+        # Calculate the minimum and maximum values for each channel
+        min_values = np.min(img, axis=(0, 1))  # Minimum values for each channel
+        max_values = np.max(img, axis=(0, 1))  # Maximum values for each channel
+
+        # Min-max normalization for each channel
+        img = (img - min_values) / (max_values - min_values)
+        # Convert NaNs to -1
+        img = np.nan_to_num(img, -1)
+        
         # apply augmentations if specified
         if self.transform:
             augmented = self.transform(image=img, mask=label)
@@ -101,7 +113,7 @@ class Sen1Floods11Dataset(Dataset):
 class Sen1Floods11DataModule(LightningDataModule):
     def __init__(self, path, label_type='HandLabeled', batch_size=8, num_workers=0, debug=False, transforms=False, processor=None, **kwargs):
         super().__init__(**kwargs)
-        ROOT = os.path.dirname(os.getcwd())
+        ROOT = os.getcwd()
         self.path = path
         self.hand_labeled_path = os.path.join(ROOT, 'sen1floods11', 'hand_labeled.csv')
         self.label_type = label_type

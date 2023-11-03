@@ -7,7 +7,8 @@ from pytorch_lightning import LightningModule, Trainer, LightningDataModule, Cal
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from etci_dataset import ETCIDataset, ETCIDataModule
+# from etci_dataset import ETCIDataset, ETCIDataModule
+from sen1floods11_dataset import Sen1Floods11Dataset, Sen1Floods11DataModule
 from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 from model import SegModule
 from utils import *
@@ -18,7 +19,8 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
     # where dataset will be stored
-    parser.add_argument("--path", type=str, default="../data/")
+    parser.add_argument("--path", type=str, default="sen1floods11")
+    parser.add_argument("--label_type", type=str, default="HandLabeled")
     
     # Model
     parser.add_argument('--model', type=str, default='u-net')
@@ -72,7 +74,7 @@ class LogPredictionsCallback(Callback):
             self.log_table(batch, outputs, set='test')
            
     def log_table(self, batch, outputs, set='val'):
-        x, y, water = batch['image'], batch['mask'], batch['water']
+        x, y = batch['img'], batch['label'],
         y_hat = outputs['y_hat']
 
         n = x.size(dim=0)
@@ -89,12 +91,9 @@ class LogPredictionsCallback(Callback):
         y_hat[y_hat < 0.5] = 0
         preds = [img.cpu().numpy() for img in y_hat[:n]]
 
-        water = torch.squeeze(water, dim=1)
-        water_labels = [img.cpu().numpy() for img in water[:n]]
-
-        columns = ['vv', 'vh', 'labels', 'predictions', 'water']
-        data = [[wandb.Image(vv_i), wandb.Image(vh_i), wandb.Image(y_i), wandb.Image(yhat_i), wandb.Image(w_i)]
-                    for vv_i, vh_i, y_i, yhat_i, w_i in list(zip(vv_images, vh_images, labels, preds, water_labels))]
+        columns = ['vv', 'vh', 'labels', 'predictions']
+        data = [[wandb.Image(vv_i), wandb.Image(vh_i), wandb.Image(y_i), wandb.Image(yhat_i)]
+                    for vv_i, vh_i, y_i, yhat_i in list(zip(vv_images, vh_images, labels, preds))]
         wandb_logger.log_table(key=f'SAR flood detection-{set}', columns=columns, data=data)
 
 def create_model(args):
@@ -112,7 +111,7 @@ def create_model(args):
         model = model_class[args.model](
             encoder_name= args.backbone,
             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
+            in_channels=2,
             classes=1
         )
         
@@ -132,16 +131,24 @@ def create_model(args):
     return model, image_processor
 
 if __name__ == '__main__':
-    os.chdir('src')
+    ROOT = os.getcwd()
     args = get_args()
     print(args)
-    print(os.getcwd())
+    print(f'Current Working Directory: {ROOT}')
     print(f'Pytorch {torch.__version__}')
     seed_everything(42, workers=True)
     
+    if args.label_type == 'HandLabeled':
+        path = os.path.join(ROOT, args.path, 'hand_labeled.csv')
+    elif args.label_type == 'WeaklyLabeled':
+        path = os.path.join(ROOT, args.path, 'weak_labeled.csv')
+
     model, image_processor = create_model(args)
 
-    datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers,
+    # datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers,
+    #                           debug=args.debug, transforms=args.transforms)
+    print(f'CSV location:{path}')
+    datamodule = Sen1Floods11DataModule(path, args.label_type, batch_size=args.batch_size, num_workers=args.num_workers,
                               debug=args.debug, transforms=args.transforms)
     datamodule.setup()
     
@@ -174,7 +181,7 @@ if __name__ == '__main__':
             p.numel() for p in model.parameters() if p.requires_grad
         )
     
-    wandb_logger = WandbLogger(project='sar_seg', log_model='all', config=vars(args))
+    wandb_logger = WandbLogger(project='sar_seg_sen1floods11', log_model='all', config=vars(args))
     
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
