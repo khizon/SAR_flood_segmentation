@@ -89,7 +89,7 @@ class LogPredictionsCallback(Callback):
 
         y_hat[y_hat >= 0.5] = 1
         y_hat[y_hat < 0.5] = 0
-        preds = [img.cpu().numpy() for img in y_hat[:n]]
+        preds = [img.cpu().float().numpy() for img in y_hat[:n]]
 
         columns = ['vv', 'vh', 'labels', 'predictions']
         data = [[wandb.Image(vv_i), wandb.Image(vh_i), wandb.Image(y_i), wandb.Image(yhat_i)]
