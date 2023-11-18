@@ -15,7 +15,7 @@ class Sen1Floods11Dataset(Dataset):
         self.dataset = pd.read_csv(DF_PATH)
         self.dataset = self.dataset[self.dataset['Split']==split]
         self.batch_size=batch_size
-        self.ROOT = os.getcwd()
+        self.ROOT = os.path.dirname(DF_PATH)
         
         if len(self.dataset) < self.batch_size:
             self.batch_size = len(self.dataset)
@@ -31,7 +31,7 @@ class Sen1Floods11Dataset(Dataset):
                     # ),
                     # A.GridDistortion(p=0.4),
                     # A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
-                ]
+                ], additional_targets={'image0':'image', 'mask0':'mask'}
             )
         else:
             self.transform = None
@@ -54,7 +54,7 @@ class Sen1Floods11Dataset(Dataset):
             LABEL_FOLDER = 'LabelHand'
             WATER_FOLDER = 'JRCWaterHand'
             OTSU_FOLDER = 'S1OtsuLabelHand'
-            SPLIT_ROOT = os.path.join(self.ROOT, 'sen1floods11', 'flood_events', 'HandLabeled')
+            SPLIT_ROOT = os.path.join(self.ROOT, 'flood_events', 'HandLabeled')
             
             water_path = os.path.join(SPLIT_ROOT, WATER_FOLDER, f'{row["Region"]}_{row["Img_Id"]}_{WATER_FOLDER}.tif')
             otsu_path = os.path.join(SPLIT_ROOT, OTSU_FOLDER, f'{row["Region"]}_{row["Img_Id"]}_{OTSU_FOLDER}.tif')
@@ -62,7 +62,7 @@ class Sen1Floods11Dataset(Dataset):
         elif self.label_type == 'WeaklyLabeled':
             IMG_FOLDER = 'S1Weak'
             LABEL_FOLDER = 'S2IndexLabelWeak'
-            SPLIT_ROOT = os.path.join(self.ROOT, 'sen1floods11', 'flood_events', 'WeaklyLabeled')
+            SPLIT_ROOT = os.path.join(self.ROOT, 'flood_events', 'WeaklyLabeled')
             
             water_path = None
             otsu_path = None
@@ -77,19 +77,28 @@ class Sen1Floods11Dataset(Dataset):
         otsu = imread(otsu_path) if otsu_path else None
 
         # Calculate the minimum and maximum values for each channel
-        min_values = np.min(img, axis=(0, 1))  # Minimum values for each channel
-        max_values = np.max(img, axis=(0, 1))  # Maximum values for each channel
+        min_values = np.min(img, axis=(1, 2))  # Minimum values for each channel
+        max_values = np.max(img, axis=(1, 2))  # Maximum values for each channel
 
         # Min-max normalization for each channel
-        img = (img - min_values) / (max_values - min_values)
+        img = (img - min_values[:, np.newaxis, np.newaxis]) / (max_values - min_values)[:, np.newaxis, np.newaxis]
         # Convert NaNs to -1
         img = np.nan_to_num(img, -1)
         
         # apply augmentations if specified
         if self.transform:
+            # Transpose the image and mask from (C, H, W) to (H, W, C)
+            img = np.transpose(img, (1, 2, 0))
+            # label = np.transpose(label, (1, 2, 0))
+
+            # Apply the transformations
             augmented = self.transform(image=img, mask=label)
             img = augmented['image']
             label = augmented['mask']
+
+            # Transpose the image and mask back to (C, H, W)
+            img = np.transpose(img, (2, 0, 1))
+            # label = np.transpose(label, (2, 0, 1))
 
         # if self.processor:
         #     example["img"] = self.processor(images=img, return_tensors='pt')['pixel_values'].squeeze()
@@ -115,7 +124,7 @@ class Sen1Floods11DataModule(LightningDataModule):
         super().__init__(**kwargs)
         ROOT = os.getcwd()
         self.path = path
-        self.hand_labeled_path = os.path.join(ROOT, 'sen1floods11', 'hand_labeled.csv')
+        self.hand_labeled_path = os.path.join(os.path.dirname(self.path), 'hand_labeled.csv')
         self.label_type = label_type
         self.batch_size=batch_size
         self.num_workers=num_workers
