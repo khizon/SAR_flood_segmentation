@@ -165,13 +165,23 @@ class Sen1Floods11DataModule(LightningDataModule):
         )
     
     def test_dataloader(self):
-        return DataLoader(
+        data_test = DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True
         )
+        
+        data_holdout = DataLoader(
+            self.holdout_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
+            pin_memory=True
+        )
+    
+        return [data_test, data_holdout]
     
     def holdout_dataloader(self):
         return DataLoader(

@@ -63,6 +63,7 @@ class SegModule(LightningModule):
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(ignore_index=-1), BinaryPrecision(ignore_index=-1), BinaryRecall(ignore_index=-1), BinaryF1Score(ignore_index=-1)
         self.validation_step_outputs = []
         self.test_step_outputs = []
+        self.holdout_step_outputs = []
         self.train_step_outputs = []
         self.max_epochs=max_epochs
         self.lr = lr
@@ -99,39 +100,49 @@ class SegModule(LightningModule):
         self.train_step_outputs.clear()
         
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        # miou = self.metric(y_hat, y.int())
-        self.test_step_outputs.append({
-            'test_miou': self.jaccard_m(y_hat, y.int()),
-            # 'test_iou_f': self.jaccard_f(y_hat, y.int()),
-            # 'test_iou_b': self.jaccard_b(y_hat, y.int()),
-            'test_precision':self.precision(y_hat, y.int()),
-            'test_recall':self.recall(y_hat, y.int()),
-            'test_f1':self.f1(y_hat, y.int()),
-            'test_loss':loss
-        })
+        if dataloader_idx == 0:
+            self.test_step_outputs.append({
+                'test_miou': self.jaccard_m(y_hat, y.int()),
+                # 'test_iou_f': self.jaccard_f(y_hat, y.int()),
+                # 'test_iou_b': self.jaccard_b(y_hat, y.int()),
+                'test_precision':self.precision(y_hat, y.int()),
+                'test_recall':self.recall(y_hat, y.int()),
+                'test_f1':self.f1(y_hat, y.int()),
+                'test_loss':loss
+            })
+        else:
+            self.holdout_step_outputs.append({
+                'test_miou': self.jaccard_m(y_hat, y.int()),
+                # 'test_iou_f': self.jaccard_f(y_hat, y.int()),
+                # 'test_iou_b': self.jaccard_b(y_hat, y.int()),
+                'test_precision':self.precision(y_hat, y.int()),
+                'test_recall':self.recall(y_hat, y.int()),
+                'test_f1':self.f1(y_hat, y.int()),
+                'test_loss':loss
+            })
         return {"y_hat": y_hat, "test_loss": loss}
 
     def on_test_epoch_end(self):
-        avg_loss = torch.stack([x["test_loss"] for x in self.test_step_outputs]).mean()
-        avg_miou = torch.stack([x["test_miou"] for x in self.test_step_outputs]).mean()
-        # avg_iou_f = torch.stack([x["test_iou_f"] for x in self.test_step_outputs]).mean()
-        # avg_iou_b = torch.stack([x["test_iou_b"] for x in self.test_step_outputs]).mean()
-        avg_precision = torch.stack([x["test_precision"] for x in self.test_step_outputs]).mean()
-        avg_recall = torch.stack([x["test_recall"] for x in self.test_step_outputs]).mean()
-        avg_f1 = torch.stack([x["test_f1"] for x in self.test_step_outputs]).mean()
+        results = [self.test_step_outputs, self.holdout_step_outputs]
         
-        self.log("test_loss", avg_loss, on_epoch=True, prog_bar=False)
-        self.log("test_miou", avg_miou*100., on_epoch=True, prog_bar=True)
-        # self.log("test_iou_f", avg_iou_f*100., on_epoch=True, prog_bar=False)
-        # self.log("test_iou_b", avg_iou_b*100., on_epoch=True, prog_bar=False)
-        self.log("test_precision", avg_precision*100., on_epoch=True, prog_bar=False)
-        self.log("test_recall", avg_recall*100., on_epoch=True, prog_bar=False)
-        self.log("test_f1", avg_f1*100., on_epoch=True, prog_bar=False)
-        self.test_step_outputs.clear()
+        for idx, result in enumerate(results):
+            d_idx = {0: 'test', 1: 'holdout'}
+            avg_loss = torch.stack([x["test_loss"] for x in result]).mean()
+            avg_miou = torch.stack([x["test_miou"] for x in result]).mean()
+            avg_precision = torch.stack([x["test_precision"] for x in result]).mean()
+            avg_recall = torch.stack([x["test_recall"] for x in result]).mean()
+            avg_f1 = torch.stack([x["test_f1"] for x in result]).mean()
+
+            self.log(f"{d_idx[idx]}_loss", avg_loss, on_epoch=True, prog_bar=False)
+            self.log(f"{d_idx[idx]}_miou", avg_miou*100., on_epoch=True, prog_bar=True)
+            self.log(f"{d_idx[idx]}_precision", avg_precision*100., on_epoch=True, prog_bar=False)
+            self.log(f"{d_idx[idx]}_recall", avg_recall*100., on_epoch=True, prog_bar=False)
+            self.log(f"{d_idx[idx]}_f1", avg_f1*100., on_epoch=True, prog_bar=False)
+            result.clear()
         
     def validation_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
