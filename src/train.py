@@ -29,7 +29,7 @@ def get_args():
     parser.add_argument('--pre_trained', default='no')
     
     #Model Hyperparameters
-    parser.add_argument('--batch_size', type=int, default=16, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=8, metavar='N',
                         help='input batch size for training (default: )')
     parser.add_argument('--max_epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 30)')
@@ -74,6 +74,7 @@ class LogPredictionsCallback(Callback):
             self.log_table(batch, outputs, set='test')
            
     def log_table(self, batch, outputs, set='val'):
+        class_labels = {-1: "N/A", 0: "Not Flood", 1: "Flood"}
         x, y = batch['img'], batch['label'],
         y_hat = outputs['y_hat']
 
@@ -82,19 +83,28 @@ class LogPredictionsCallback(Callback):
         x = torch.squeeze(x, dim=1)
         x = torch.permute(x, (0,2,3,1))
         vv_images = [img[:,:,0].cpu().numpy() for img in x[:n]]
-        vh_images = [img[:,:,1].cpu().numpy() for img in x[:n]]
+#         vh_images = [img[:,:,1].cpu().numpy() for img in x[:n]]
 
         y = torch.squeeze(y, dim=1)
+        y[y==-1] = 255
         labels = [img.cpu().numpy() for img in y[:n]]
 
-        y_hat[y_hat >= 0.5] = 1
-        y_hat[y_hat < 0.5] = 0
+        # y_hat[y_hat >= 0.5] = 1
+        # y_hat[y_hat < 0.5] = 0
+        y_hat = torch.squeeze(y_hat, dim=1)
         preds = [img.cpu().float().numpy() for img in y_hat[:n]]
 
-        columns = ['vv', 'vh', 'labels', 'predictions']
-        data = [[wandb.Image(vv_i), wandb.Image(vh_i), wandb.Image(y_i), wandb.Image(yhat_i)]
-                    for vv_i, vh_i, y_i, yhat_i in list(zip(vv_images, vh_images, labels, preds))]
-        wandb_logger.log_table(key=f'SAR flood detection-{set}', columns=columns, data=data)
+        columns = ['annotations']
+        data =[[
+            wandb.Image(
+                vv_i, masks={
+                    "label": {"mask_data": y_i, "class_labels": class_labels},
+                    "prediction": {"mask_data": yhat_i, "class_labels": class_labels}
+                }
+            ),
+        ] for vv_i, y_i, yhat_i in list(zip(vv_images, labels, preds))
+        ]
+        wandb_logger.log_table(key=f'SAR Flood Detection-{set}', columns=columns, data=data)
 
 def create_model(args):
     
@@ -111,7 +121,7 @@ def create_model(args):
         model = model_class[args.model](
             encoder_name= args.backbone,
             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=2,
+            in_channels=3,
             classes=1
         )
         
@@ -124,8 +134,8 @@ def create_model(args):
                                                                 num_labels=len(id2label), id2label=id2label, label2id=label2id,
                                                                 reshape_last_stage=True)
         # Freeze encoder
-        for param in model.segformer.encoder.parameters():
-            param.requires_grad = False
+        # for param in model.segformer.encoder.parameters():
+        #     param.requires_grad = False
         image_processor = AutoImageProcessor.from_pretrained(model_weights)
     
     return model, image_processor
@@ -196,5 +206,23 @@ if __name__ == '__main__':
     trainer.test(model, datamodule=datamodule, ckpt_path='best')
     
     wandb.finish()
+    
+    # WandB cleanup
+    dry_run = False
+    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11", "entity": "khizon"})
+    project = api.project('sar_seg_sen1floods11')
+
+
+    for artifact_type in project.artifacts_types():
+        for artifact_collection in artifact_type.collections():
+            for version in api.artifact_versions(artifact_type.type, artifact_collection.name):
+                if artifact_type.type == 'model':
+                    if len(version.aliases) > 0:
+                        # print out the name of the one we are keeping
+                        print(f'KEEPING {version.name}')
+                    else:
+                        print(f'DELETING {version.name}')
+                        if not dry_run:
+                            version.delete()
     
     

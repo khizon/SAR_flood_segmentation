@@ -9,6 +9,11 @@ from torch.utils.data.sampler import WeightedRandomSampler
 from pytorch_lightning import LightningDataModule
 import albumentations as A
 
+def s1_to_rgb(img):
+    ratio_image = img[0] / img[1]
+    rgb_image = np.stack((img[0], img[1], 1-ratio_image), axis=0)
+    return rgb_image
+
 class Sen1Floods11Dataset(Dataset):
     def __init__(self, DF_PATH, split='train', label_type='HandLabeled', debug=False, batch_size=8, transforms=False, processor=None):
         self.label_type = label_type
@@ -24,13 +29,15 @@ class Sen1Floods11Dataset(Dataset):
             # define augmentation transforms
             self.transform = A.Compose(
                 [
+                    A.RandomCrop(width=256, height=256),
+                    # A.Resize(height=512, width=512, interpolation=cv2.INTER_LINEAR, p=1.0),
                     A.HorizontalFlip(p=0.5),
                     A.Rotate(270),
-                    # A.ElasticTransform(
-                    #     p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
-                    # ),
-                    # A.GridDistortion(p=0.4),
-                    # A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
+                    A.ElasticTransform(
+                        p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
+                    ),
+                    A.GridDistortion(p=0.4),
+                    A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
                 ], additional_targets={'image0':'image', 'mask0':'mask'}
             )
         else:
@@ -76,14 +83,17 @@ class Sen1Floods11Dataset(Dataset):
         water = imread(water_path) if water_path else None
         otsu = imread(otsu_path) if otsu_path else None
 
-        # Calculate the minimum and maximum values for each channel
-        min_values = np.min(img, axis=(1, 2))  # Minimum values for each channel
-        max_values = np.max(img, axis=(1, 2))  # Maximum values for each channel
-
-        # Min-max normalization for each channel
-        img = (img - min_values[:, np.newaxis, np.newaxis]) / (max_values - min_values)[:, np.newaxis, np.newaxis]
-        # Convert NaNs to -1
-        img = np.nan_to_num(img, -1)
+        # Apply mean and std dev normalization using the values reported in the dataset's paper
+        data_mean = [0.6851, 0.5235]
+        data_sd = [0.0820, 0.1102]
+        
+        # img = self.normalize_img(img, data_mean, data_sd)
+        # Create a 3rd channel using ratio of VV and VH layers
+        img = s1_to_rgb(img)
+        
+        # Convert NaNs to -99
+        img = np.nan_to_num(img, 9e5)
+        label = np.nan_to_num(label, -1)
         
         # apply augmentations if specified
         if self.transform:
@@ -118,6 +128,13 @@ class Sen1Floods11Dataset(Dataset):
     def get_classes(self):
         class_counts = self.dataset['Region'].value_counts()
         return [1/class_counts[i] for i in self.dataset.Region.values]
+    
+    def normalize_img(self, img, mean, std):
+        # img shape: C x H x W
+        # mean and std are lists of length C
+        for c in range(img.shape[0]):
+            img[c, :, :] = (img[c, :, :] - mean[c]) / std[c]
+        return img
     
 class Sen1Floods11DataModule(LightningDataModule):
     def __init__(self, path, label_type='HandLabeled', batch_size=8, num_workers=0, debug=False, transforms=False, processor=None, **kwargs):

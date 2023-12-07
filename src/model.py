@@ -74,7 +74,7 @@ class SegModule(LightningModule):
         if 'segformer' in self.model_class:
             outputs = self.model(pixel_values=x)
             # Upsample logits to 256 x 256
-            y_hat = torch.nn.functional.interpolate(outputs.logits, size=(256,256), mode="bilinear", align_corners=False)
+            y_hat = torch.nn.functional.interpolate(outputs.logits, size=(x.shape[2],x.shape[3]), mode="bilinear", align_corners=False)
         else:
             y_hat = self.model(x)
         y_hat = self.dropout(y_hat)
@@ -124,6 +124,8 @@ class SegModule(LightningModule):
                 'test_f1':self.f1(y_hat, y.int()),
                 'test_loss':loss
             })
+        
+        y_hat = torch.where(torch.sigmoid(y_hat) >= 0.5, 1, 0)
         return {"y_hat": y_hat, "test_loss": loss}
 
     def on_test_epoch_end(self):
@@ -158,6 +160,8 @@ class SegModule(LightningModule):
             'val_f1':self.f1(y_hat, y.int()),
             'val_loss':loss
         })
+        
+        # y_hat = torch.where(torch.sigmoid(y_hat) >= 0.5, 1, 0)
         return {"y_hat": y_hat, "val_loss": loss}
 
     def on_validation_epoch_end(self):
