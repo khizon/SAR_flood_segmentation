@@ -30,13 +30,29 @@ class Sen1Floods11Dataset(Dataset):
             self.transform = A.Compose(
                 [
                     A.RandomCrop(width=256, height=256),
-                    # A.Resize(height=512, width=512, interpolation=cv2.INTER_LINEAR, p=1.0),
                     A.HorizontalFlip(p=0.5),
                     A.Rotate(270),
-                    A.ElasticTransform(
-                        p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
-                    ),
-                    A.GridDistortion(p=0.4),
+                    # A.Gamma(gamma=(0.5, 1.5), p=0.5),
+                    # A.RandomBrightness(limit=0.2, p=0.5),
+                    # A.RandomContrast(limit=0.2, p=0.5),
+                    # A.OneOf([
+                    #     A.Blur(blur_limit=7, p=1.0),
+                    #     A.GaussianBlur(blur_limit=7, p=1.0),
+                    #     A.MedianBlur(blur_limit=7, p=1.0),
+                    #     A.MotionBlur(blur_limit=7, p=1.0),
+                    #     A.AdvancedBlur(blur_limit=7, p=1.0),
+                    # ], p=0.5),
+                    # A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=0.5),
+                    # A.OneOf([
+                    #     A.GaussNoise(var_limit=(10, 50), p=1.0),
+                    #     A.PoissonNoise(p=1.0),
+                    #     A.SaltAndPepper(p=1.0),
+                    #     A.CoarseDropout(max_holes=16, max_height=16, max_width=16, p=1.0),
+                    # ], p=0.5),
+                    # A.ElasticTransform(
+                    #     p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
+                    # ),
+                    # A.GridDistortion(p=0.4),
                     A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
                 ], additional_targets={'image0':'image', 'mask0':'mask'}
             )
@@ -83,16 +99,16 @@ class Sen1Floods11Dataset(Dataset):
         water = imread(water_path) if water_path else None
         otsu = imread(otsu_path) if otsu_path else None
 
-        # Apply mean and std dev normalization using the values reported in the dataset's paper
-        data_mean = [0.6851, 0.5235]
-        data_sd = [0.0820, 0.1102]
-        
+        # Clip the image [0, 1], then apply mean and std dev normalization using the values reported in the dataset's paper
+        # data_mean = [0.6851, 0.5235]
+        # data_sd = [0.0820, 0.1102]
         # img = self.normalize_img(img, data_mean, data_sd)
+        
         # Create a 3rd channel using ratio of VV and VH layers
         img = s1_to_rgb(img)
         
         # Convert NaNs to -99
-        img = np.nan_to_num(img, 9e5)
+        img = np.nan_to_num(img, -999)
         label = np.nan_to_num(label, -1)
         
         # apply augmentations if specified
@@ -130,6 +146,9 @@ class Sen1Floods11Dataset(Dataset):
         return [1/class_counts[i] for i in self.dataset.Region.values]
     
     def normalize_img(self, img, mean, std):
+        # Clip
+        # img = np.clip(img, -50, 1)
+        # img = (img + 50) / 51
         # img shape: C x H x W
         # mean and std are lists of length C
         for c in range(img.shape[0]):

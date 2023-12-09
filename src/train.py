@@ -3,6 +3,7 @@ warnings.filterwarnings('ignore')
 
 import os
 import torch
+import torchvision.models.segmentation as tms
 from pytorch_lightning import LightningModule, Trainer, LightningDataModule, Callback, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
@@ -48,7 +49,7 @@ def get_args():
     
     # Early Stopping
     parser.add_argument("--delta", default=0.01)
-    parser.add_argument("--patience", default=10)
+    parser.add_argument("--patience", default=20)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     
     parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)   
@@ -113,7 +114,7 @@ def create_model(args):
         "u-net++": smp.UnetPlusPlus,
         "ma-net": smp.MAnet,
         "deeplabv3+": smp.DeepLabV3Plus,
-        "fpn": smp.FPN
+        "fpn": smp.FPN,
     }
     image_processor = None
     
