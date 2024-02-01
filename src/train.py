@@ -111,6 +111,7 @@ def create_model(args):
     
     model_class = {
         "u-net": smp.Unet,
+        "linknet": smp.Linknet,
         "u-net++": smp.UnetPlusPlus,
         "ma-net": smp.MAnet,
         "deeplabv3+": smp.DeepLabV3Plus,
@@ -122,7 +123,7 @@ def create_model(args):
         model = model_class[args.model](
             encoder_name= args.backbone,
             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=3,
+            in_channels=8,
             classes=1
         )
         
@@ -192,7 +193,7 @@ if __name__ == '__main__':
             p.numel() for p in model.parameters() if p.requires_grad
         )
     
-    wandb_logger = WandbLogger(project='sar_seg_sen1floods11', log_model='all', config=vars(args))
+    wandb_logger = WandbLogger(project='sar_seg_sen1floods11_1', log_model='all', config=vars(args))
     
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,

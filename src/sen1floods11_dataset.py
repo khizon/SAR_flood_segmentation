@@ -14,6 +14,27 @@ def s1_to_rgb(img):
     rgb_image = np.stack((img[0], img[1], 1-ratio_image), axis=0)
     return rgb_image
 
+def s1_to_multi(img):
+    S = []
+    VV = img[0]
+    VH = img[1]
+    S.append(VV)
+    S.append(VH)
+    S.append(VV+VH)
+    S.append(VH-VV)
+    S.append(VV*VV)
+    S.append(VH*VH)
+    S.append(VV*VH)
+    S.append((VV+VH)*(VH-VV))
+    
+    # for i, img in enumerate(S):
+    #     mean_i = np.mean(img)
+    #     std_i = np.std(img)
+    #     S[i] = (S[i]-mean_i)/std_i
+        
+    multi_image = np.stack(S, axis=0)
+    return multi_image  
+
 class Sen1Floods11Dataset(Dataset):
     def __init__(self, DF_PATH, split='train', label_type='HandLabeled', debug=False, batch_size=8, transforms=False, processor=None):
         self.label_type = label_type
@@ -32,7 +53,6 @@ class Sen1Floods11Dataset(Dataset):
                     A.RandomCrop(width=256, height=256),
                     A.HorizontalFlip(p=0.5),
                     A.Rotate(270),
-                    # A.Gamma(gamma=(0.5, 1.5), p=0.5),
                     # A.RandomBrightness(limit=0.2, p=0.5),
                     # A.RandomContrast(limit=0.2, p=0.5),
                     # A.OneOf([
@@ -42,17 +62,15 @@ class Sen1Floods11Dataset(Dataset):
                     #     A.MotionBlur(blur_limit=7, p=1.0),
                     #     A.AdvancedBlur(blur_limit=7, p=1.0),
                     # ], p=0.5),
-                    # A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=0.5),
                     # A.OneOf([
                     #     A.GaussNoise(var_limit=(10, 50), p=1.0),
-                    #     A.PoissonNoise(p=1.0),
-                    #     A.SaltAndPepper(p=1.0),
                     #     A.CoarseDropout(max_holes=16, max_height=16, max_width=16, p=1.0),
+                    #     A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
                     # ], p=0.5),
-                    # A.ElasticTransform(
-                    #     p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
-                    # ),
-                    # A.GridDistortion(p=0.4),
+                    A.ElasticTransform(
+                        p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
+                    ),
+                    A.GridDistortion(p=0.4),
                     A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
                 ], additional_targets={'image0':'image', 'mask0':'mask'}
             )
@@ -105,7 +123,10 @@ class Sen1Floods11Dataset(Dataset):
         # img = self.normalize_img(img, data_mean, data_sd)
         
         # Create a 3rd channel using ratio of VV and VH layers
-        img = s1_to_rgb(img)
+        # img = s1_to_rgb(img)
+        
+        # Make the image multi channel
+        img = s1_to_multi(img)
         
         # Convert NaNs to -99
         img = np.nan_to_num(img, -999)
@@ -115,7 +136,6 @@ class Sen1Floods11Dataset(Dataset):
         if self.transform:
             # Transpose the image and mask from (C, H, W) to (H, W, C)
             img = np.transpose(img, (1, 2, 0))
-            # label = np.transpose(label, (1, 2, 0))
 
             # Apply the transformations
             augmented = self.transform(image=img, mask=label)
@@ -124,14 +144,7 @@ class Sen1Floods11Dataset(Dataset):
 
             # Transpose the image and mask back to (C, H, W)
             img = np.transpose(img, (2, 0, 1))
-            # label = np.transpose(label, (2, 0, 1))
 
-        # if self.processor:
-        #     example["img"] = self.processor(images=img, return_tensors='pt')['pixel_values'].squeeze()
-        # else:
-        #     example["img"] = torch.from_numpy(rgb_image).permute(2,0,1).float()
-        # example["mask"] = torch.from_numpy(label).float()
-        # example['water'] = water
         
         example['img'] = img
         example['label'] = label

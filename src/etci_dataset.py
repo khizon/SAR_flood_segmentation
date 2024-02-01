@@ -20,6 +20,25 @@ def s1_to_rgb(vv_image, vh_image):
     rgb_image = np.stack((vv_image, vh_image, 1 - ratio_image), axis=2)
     return rgb_image
 
+def s1_to_multi(VV, VH):
+    S = []
+    S[0] = VV
+    S[1] = VH
+    S[2]=VV+VH
+    S[3]=VH-VV
+    S[4]=VV*VV
+    S[5]=VH*VH
+    S[6]=VV*VH
+    S[7]=(VV+VH)*(VH-VV)
+    
+    for i, img in enumerate(S):
+        mean_i = np.mean(img)
+        std_i = np.std(img)
+        S[i] = (S[i]-mean_i)/std_i
+        
+    multi_image = np.stack(S, axis=2)
+    return multi_image       
+
 class ETCIDataset(Dataset):
     def __init__(self, dataframe, split, debug=False, batch_size=8, transforms=False, processor=None):
         self.split = split
@@ -64,7 +83,10 @@ class ETCIDataset(Dataset):
         water = imread(df_row["water_body_label_path"], as_gray=True)
 
         # convert vv and vh images to rgb
-        rgb_image = s1_to_rgb(vv_image, vh_image)
+        # rgb_image = s1_to_rgb(vv_image, vh_image)
+        
+        # convert vv and vh images to multichannel image using indices
+        rgb_image = s1_to_multi(vv_image, vh_image)
 
         # apply augmentations if specified
         if self.transform:
