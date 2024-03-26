@@ -123,7 +123,7 @@ def create_model(args):
         model = model_class[args.model](
             encoder_name= args.backbone,
             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=8,
+            in_channels=7,
             classes=1
         )
         
@@ -193,7 +193,7 @@ if __name__ == '__main__':
             p.numel() for p in model.parameters() if p.requires_grad
         )
     
-    wandb_logger = WandbLogger(project='sar_seg_sen1floods11_1', log_model='all', config=vars(args))
+    wandb_logger = WandbLogger(project='sar_seg_sen1floods11_2', log_model='all', config=vars(args))
     
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
@@ -211,7 +211,7 @@ if __name__ == '__main__':
     
     # WandB cleanup
     dry_run = False
-    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11", "entity": "khizon"})
+    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11_2", "entity": "khizon"})
     project = api.project('sar_seg_sen1floods11')
 
 

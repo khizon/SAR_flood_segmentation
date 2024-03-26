@@ -33,7 +33,22 @@ def s1_to_multi(img):
     #     S[i] = (S[i]-mean_i)/std_i
         
     multi_image = np.stack(S, axis=0)
-    return multi_image  
+    return multi_image
+
+def s1_to_ratios(img):
+    S = []
+    VV = img[0]
+    VH = img[1]
+    S.append(VV)
+    S.append(VH)
+    S.append(np.nan_to_num(VV/VH))
+    S.append(np.nan_to_num((VV-VH)/(VV+VH)))
+    S.append(np.nan_to_num((VH)/(VV+VH)))
+    S.append(np.nan_to_num((VV)/(VV+VH)))
+    S.append(np.nan_to_num((4*VH)/(VV+VH)))
+    
+    multi_image = np.stack(S, axis=0)
+    return multi_image
 
 class Sen1Floods11Dataset(Dataset):
     def __init__(self, DF_PATH, split='train', label_type='HandLabeled', debug=False, batch_size=8, transforms=False, processor=None):
@@ -126,7 +141,7 @@ class Sen1Floods11Dataset(Dataset):
         # img = s1_to_rgb(img)
         
         # Make the image multi channel
-        img = s1_to_multi(img)
+        img = s1_to_ratios(img)
         
         # Convert NaNs to -99
         img = np.nan_to_num(img, -999)
