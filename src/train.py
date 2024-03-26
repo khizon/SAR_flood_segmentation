@@ -22,6 +22,8 @@ def get_args():
     # where dataset will be stored
     parser.add_argument("--path", type=str, default="sen1floods11")
     parser.add_argument("--label_type", type=str, default="HandLabeled")
+    parser.add_argument("--in_channels", type=int, default=3, metavar="N,
+                        help='number of channels for the input image')
     
     # Model
     parser.add_argument('--model', type=str, default='u-net')
@@ -84,14 +86,11 @@ class LogPredictionsCallback(Callback):
         x = torch.squeeze(x, dim=1)
         x = torch.permute(x, (0,2,3,1))
         vv_images = [img[:,:,0].cpu().numpy() for img in x[:n]]
-#         vh_images = [img[:,:,1].cpu().numpy() for img in x[:n]]
 
         y = torch.squeeze(y, dim=1)
         y[y==-1] = 255
         labels = [img.cpu().numpy() for img in y[:n]]
 
-        # y_hat[y_hat >= 0.5] = 1
-        # y_hat[y_hat < 0.5] = 0
         y_hat = torch.squeeze(y_hat, dim=1)
         preds = [img.cpu().float().numpy() for img in y_hat[:n]]
 
@@ -123,7 +122,7 @@ def create_model(args):
         model = model_class[args.model](
             encoder_name= args.backbone,
             encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=7,
+            in_channels=args.in_channels,
             classes=1
         )
         
@@ -161,7 +160,7 @@ if __name__ == '__main__':
     #                           debug=args.debug, transforms=args.transforms)
     print(f'CSV location:{path}')
     datamodule = Sen1Floods11DataModule(path, args.label_type, batch_size=args.batch_size, num_workers=args.num_workers,
-                              debug=args.debug, transforms=args.transforms)
+                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels)
     datamodule.setup()
     
     callbacks = []
@@ -193,7 +192,7 @@ if __name__ == '__main__':
             p.numel() for p in model.parameters() if p.requires_grad
         )
     
-    wandb_logger = WandbLogger(project='sar_seg_sen1floods11_2', log_model='all', config=vars(args))
+    wandb_logger = WandbLogger(project='sar_seg_sen1floods11', log_model='all', config=vars(args))
     
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
@@ -211,7 +210,7 @@ if __name__ == '__main__':
     
     # WandB cleanup
     dry_run = False
-    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11_2", "entity": "khizon"})
+    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11", "entity": "khizon"})
     project = api.project('sar_seg_sen1floods11')
 
 
