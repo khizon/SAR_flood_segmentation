@@ -45,11 +45,13 @@ def s1_to_ratios(img):
     return multi_image
 
 class Sen1Floods11Dataset(Dataset):
-    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', debug=False, batch_size=8, transforms=False, in_channels=3, processor=None):
+    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=False, processor=None):
         self.label_type = label_type
+        self.target = target
         self.dataset = pd.read_csv(DF_PATH)
-        self.dataset = self.dataset[self.dataset['Split']==split]
+        self.dataset = self.dataset[(self.dataset['Split']==split) & (~self.dataset['Exclude'])]
         self.batch_size=batch_size
+        self.in_channels = in_channels
         self.ROOT = os.path.dirname(DF_PATH)
         
         if len(self.dataset) < self.batch_size:
@@ -125,25 +127,26 @@ class Sen1Floods11Dataset(Dataset):
         label = imread(label_path)
         water = imread(water_path) if water_path else None
         otsu = imread(otsu_path) if otsu_path else None
-
-        # Clip the image [0, 1], then apply mean and std dev normalization using the values reported in the dataset's paper
-        # data_mean = [0.6851, 0.5235]
-        # data_sd = [0.0820, 0.1102]
-        # img = self.normalize_img(img, data_mean, data_sd)
-        
-        if in_channels==3:
-            # Create a 3rd channel using ratio of VV and VH layers
-            img = s1_to_rgb(img)
-        elif in_channels==7:
+  
+        if self.in_channels==7:
             # Make the image multi channel
             img = s1_to_ratios(img)
-        elif in_channels==8:
-            img = s1_to_multi(img)
+        elif self.in_channels==8:
+            img = s1_to_multi(img)  
         else:
-            raise ValueError(f'Supported in_channels: 3, 7, 8')
+            # Create a 3rd channel using ratio of VV and VH layers
+            img = s1_to_rgb(img)
         
+        if self.target == 'Water':
+            label = water
+        elif self.target == 'Combined':
+            label = np.where(water == 1, 1, label)
+            
+        # Convert unlabeled pixels to 0
+        # label = np.where(label == -1, 0, label)
+            
         # Convert NaNs to -99
-        img = np.nan_to_num(img, -999)
+        img = np.nan_to_num(img, 999)
         label = np.nan_to_num(label, -1)
         
         # apply augmentations if specified
@@ -183,12 +186,13 @@ class Sen1Floods11Dataset(Dataset):
         return img
     
 class Sen1Floods11DataModule(LightningDataModule):
-    def __init__(self, path, label_type='HandLabeled', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, **kwargs):
+    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, **kwargs):
         super().__init__(**kwargs)
         ROOT = os.getcwd()
         self.path = path
         self.hand_labeled_path = os.path.join(os.path.dirname(self.path), 'hand_labeled.csv')
         self.label_type = label_type
+        self.target = target
         self.batch_size=batch_size
         self.num_workers=num_workers
         self.debug=debug
@@ -197,10 +201,10 @@ class Sen1Floods11DataModule(LightningDataModule):
         self.processor=processor
         
     def prepare_data(self):
-        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.debug, self.batch_size, self.transforms, self.in_channels, self.processor)
-        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.debug, self.batch_size, self.in_channels, self.processor)
-        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.debug, self.batch_size, self.in_channels, self.processor)
-        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.debug, self.batch_size, self.in_channels, self.processor)
+        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor)
+        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.processor)
+        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, self.processor)
+        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, self.processor)
         
     def setup(self, stage=None):
         self.prepare_data()

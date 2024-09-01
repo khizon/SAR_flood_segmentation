@@ -75,9 +75,18 @@ class SegModule(LightningModule):
             outputs = self.model(pixel_values=x)
             # Upsample logits to 256 x 256
             y_hat = torch.nn.functional.interpolate(outputs.logits, size=(x.shape[2],x.shape[3]), mode="bilinear", align_corners=False)
+        elif self.model_class == 'fcn':
+            y_hat = self.model(x)['out']
         else:
             y_hat = self.model(x)
         y_hat = self.dropout(y_hat)
+        
+        # Post-processing step
+        # Create a mask for pixels with value 999 in the first two channels of x
+        mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
+        # Use the mask to set corresponding pixels in y_hat to 0
+        y_hat[mask] = 0
+        
         return y_hat
     
     def configure_optimizers(self):

@@ -22,11 +22,12 @@ def get_args():
     # where dataset will be stored
     parser.add_argument("--path", type=str, default="sen1floods11")
     parser.add_argument("--label_type", type=str, default="HandLabeled")
-    parser.add_argument("--in_channels", type=int, default=3, metavar="N,
+    parser.add_argument("--target", type=str, default="Flood")
+    parser.add_argument("--in_channels", type=int, default=3, metavar='N',
                         help='number of channels for the input image')
     
     # Model
-    parser.add_argument('--model', type=str, default='u-net')
+    parser.add_argument('--model', type=str, default='linknet')
     parser.add_argument('--backbone', type=str, default='mobilenet_v2')
     parser.add_argument('--loss', type=str, default='dice')
     parser.add_argument('--pre_trained', default='no')
@@ -115,16 +116,21 @@ def create_model(args):
         "ma-net": smp.MAnet,
         "deeplabv3+": smp.DeepLabV3Plus,
         "fpn": smp.FPN,
+        "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
     }
     image_processor = None
     
     if args.model in model_class.keys():
-        model = model_class[args.model](
-            encoder_name= args.backbone,
-            encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
-            in_channels=args.in_channels,
-            classes=1
-        )
+        if args.model != 'fcn':
+            model = model_class[args.model](
+                encoder_name= args.backbone,
+                encoder_weights= args.pre_trained if args.pre_trained != 'no' else None ,
+                in_channels=args.in_channels,
+                classes=1
+            )
+        else:
+            model = model_class[args.model]
+            model.classifier[4] = nn.Conv2d(512, 1, kernel_size=(1, 1), stride=(1, 1))
         
     elif 'segformer' in args.model:
         id2label = {'0': 'flood'}
@@ -159,7 +165,7 @@ if __name__ == '__main__':
     # datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers,
     #                           debug=args.debug, transforms=args.transforms)
     print(f'CSV location:{path}')
-    datamodule = Sen1Floods11DataModule(path, args.label_type, batch_size=args.batch_size, num_workers=args.num_workers,
+    datamodule = Sen1Floods11DataModule(path, args.label_type, target=args.target, batch_size=args.batch_size, num_workers=args.num_workers,
                               debug=args.debug, transforms=args.transforms, in_channels=args.in_channels)
     datamodule.setup()
     
@@ -192,7 +198,7 @@ if __name__ == '__main__':
             p.numel() for p in model.parameters() if p.requires_grad
         )
     
-    wandb_logger = WandbLogger(project='sar_seg_sen1floods11', log_model='all', config=vars(args))
+    wandb_logger = WandbLogger(project='sar_seg_sen1floods11_2', log_model='all', config=vars(args))
     
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
@@ -210,8 +216,8 @@ if __name__ == '__main__':
     
     # WandB cleanup
     dry_run = False
-    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11", "entity": "khizon"})
-    project = api.project('sar_seg_sen1floods11')
+    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11_2", "entity": "khizon"})
+    project = api.project('sar_seg_sen1floods11_2')
 
 
     for artifact_type in project.artifacts_types():
