@@ -33,11 +33,11 @@ def get_args():
     parser.add_argument('--pre_trained', default='no')
     
     #Model Hyperparameters
-    parser.add_argument('--batch_size', type=int, default=8, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: )')
-    parser.add_argument('--max_epochs', type=int, default=30, metavar='N',
+    parser.add_argument('--max_epochs', type=int, default=100, metavar='N',
                         help='number of epochs to train (default: 30)')
-    parser.add_argument('--lr', type=float, default=1e-5, metavar='LR',
+    parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
                         help='learning rate (default: 1e-3)')
     parser.add_argument('--dropout', type=float, default=0.1)
     
@@ -52,7 +52,7 @@ def get_args():
     
     # Early Stopping
     parser.add_argument("--delta", default=0.01)
-    parser.add_argument("--patience", default=20)
+    parser.add_argument("--patience", default=10)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     
     parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)   
@@ -206,7 +206,9 @@ if __name__ == '__main__':
                       max_epochs=args.max_epochs,
                       logger=wandb_logger if args.wandb else None,
                       gradient_clip_val=0.5,
-                      callbacks=callbacks)
+                      callbacks=callbacks,
+                      detect_anomaly=True                
+                     )
     
     
     trainer.fit(model, datamodule=datamodule)

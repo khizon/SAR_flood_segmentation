@@ -1,7 +1,7 @@
 from pytorch_lightning import LightningModule
 from torchmetrics.classification import BinaryJaccardIndex, BinaryPrecision, BinaryRecall, BinaryF1Score
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
 import segmentation_models_pytorch as smp
 import torch
 import numpy as np
@@ -79,25 +79,32 @@ class SegModule(LightningModule):
             y_hat = self.model(x)['out']
         else:
             y_hat = self.model(x)
-        y_hat = self.dropout(y_hat)
+        if self.training:
+            y_hat = self.dropout(y_hat)
         
         # Post-processing step
         # Create a mask for pixels with value 999 in the first two channels of x
         mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
         # Use the mask to set corresponding pixels in y_hat to 0
-        y_hat[mask] = 0
+        y_hat[mask] = 1e-7
         
         return y_hat
     
     def configure_optimizers(self):
         optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
         scheduler = CosineAnnealingLR(optimizer, T_max=self.max_epochs)
+        # scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2,
+        #                                         eta_min=0, last_epoch=-1, verbose=False)
         return [optimizer], [scheduler]
     
     def training_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
+        # Check if loss is NaN
+        if torch.isnan(loss):
+            print(f"Skipping batch {batch_idx} due to NaN loss")
+            return None
         self.train_step_outputs.append({
             'train_loss':loss
         })
