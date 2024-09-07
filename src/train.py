@@ -42,7 +42,7 @@ def get_args():
     parser.add_argument('--dropout', type=float, default=0.1)
     
     # 16-bit fp model to reduce the size
-    parser.add_argument("--precision", default=16)
+    parser.add_argument("--precision", default=32)
     parser.add_argument("--accelerator", default='auto')
     parser.add_argument("--devices", default=1)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -189,7 +189,7 @@ if __name__ == '__main__':
         callbacks.append(early_stop_callback)
     
     # Define Total Model
-    model = SegModule(model, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss)
+    model = SegModule(model, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss, debug=args.debug)
     
     args.total_params = sum(
             param.numel() for param in model.parameters()

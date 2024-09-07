@@ -40,13 +40,14 @@ class BCEDiceLoss(torch.nn.Module):
         return combined_loss
 
 class SegModule(LightningModule):
-    def __init__(self, model, model_class='u-net', lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', **kwargs):
+    def __init__(self, model, model_class='u-net', lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', debug=True, **kwargs):
         
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
         
         self.model = model
         self.model_class = model_class
+        self.debug = debug
         
         if loss == 'dice':
             self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
@@ -89,7 +90,7 @@ class SegModule(LightningModule):
         y_hat[mask] = 1e-7
         
         return y_hat
-    
+ 
     def configure_optimizers(self):
         optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
         scheduler = CosineAnnealingLR(optimizer, T_max=self.max_epochs)
@@ -99,19 +100,29 @@ class SegModule(LightningModule):
     
     def training_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
+        
+        # Debug: Simulate NaN issue
+        if self.debug and (batch_idx==0):
+            x = torch.full_like(x, np.nan)
+        
         y_hat = self(x)
+        
         loss = self.loss(y_hat, y)
-        # Check if loss is NaN
-        if torch.isnan(loss):
-            print(f"Skipping batch {batch_idx} due to NaN loss")
-            return None
+        
         self.train_step_outputs.append({
-            'train_loss':loss
+            'train_loss': loss
         })
+        
+        # If there are NaNs in y_hat, replace those values with -1
+        if torch.isnan(y_hat).any():
+            print(f"Batch {batch_idx}: NaN detected")
+            print(f"y_hat: {y_hat}")
+            return None
+         
         return {'loss': loss}
-    
+        
     def on_train_epoch_end(self):
-        avg_loss = torch.stack([x["train_loss"] for x in self.train_step_outputs]).mean()
+        avg_loss = torch.nanmean(torch.stack([x["train_loss"] for x in self.train_step_outputs]))
         self.log("train_loss", avg_loss, on_epoch=True, prog_bar=True)
         self.train_step_outputs.clear()
         
@@ -123,8 +134,6 @@ class SegModule(LightningModule):
         if dataloader_idx == 0:
             self.test_step_outputs.append({
                 'test_miou': self.jaccard_m(y_hat, y.int()),
-                # 'test_iou_f': self.jaccard_f(y_hat, y.int()),
-                # 'test_iou_b': self.jaccard_b(y_hat, y.int()),
                 'test_precision':self.precision(y_hat, y.int()),
                 'test_recall':self.recall(y_hat, y.int()),
                 'test_f1':self.f1(y_hat, y.int()),
@@ -133,8 +142,6 @@ class SegModule(LightningModule):
         else:
             self.holdout_step_outputs.append({
                 'test_miou': self.jaccard_m(y_hat, y.int()),
-                # 'test_iou_f': self.jaccard_f(y_hat, y.int()),
-                # 'test_iou_b': self.jaccard_b(y_hat, y.int()),
                 'test_precision':self.precision(y_hat, y.int()),
                 'test_recall':self.recall(y_hat, y.int()),
                 'test_f1':self.f1(y_hat, y.int()),
@@ -149,11 +156,11 @@ class SegModule(LightningModule):
         
         for idx, result in enumerate(results):
             d_idx = {0: 'test', 1: 'holdout'}
-            avg_loss = torch.stack([x["test_loss"] for x in result]).mean()
-            avg_miou = torch.stack([x["test_miou"] for x in result]).mean()
-            avg_precision = torch.stack([x["test_precision"] for x in result]).mean()
-            avg_recall = torch.stack([x["test_recall"] for x in result]).mean()
-            avg_f1 = torch.stack([x["test_f1"] for x in result]).mean()
+            avg_loss = torch.nanmean(torch.stack([x["test_loss"] for x in result]))
+            avg_miou = torch.nanmean(torch.stack([x["test_miou"] for x in result]))
+            avg_precision = torch.nanmean(torch.stack([x["test_precision"] for x in result]))
+            avg_recall = torch.nanmean(torch.stack([x["test_recall"] for x in result]))
+            avg_f1 = torch.nanmean(torch.stack([x["test_f1"] for x in result]))
 
             self.log(f"{d_idx[idx]}_loss", avg_loss, on_epoch=True, prog_bar=False)
             self.log(f"{d_idx[idx]}_miou", avg_miou*100., on_epoch=True, prog_bar=True)
@@ -166,33 +173,24 @@ class SegModule(LightningModule):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        # miou = self.metric(y_hat, y.int())
         self.validation_step_outputs.append({
             'val_miou': self.jaccard_m(y_hat, y.int()),
-            # 'val_iou_f': self.jaccard_f(y_hat, y.int()),
-            # 'val_iou_b': self.jaccard_b(y_hat, y.int()),
             'val_precision':self.precision(y_hat, y.int()),
             'val_recall':self.recall(y_hat, y.int()),
             'val_f1':self.f1(y_hat, y.int()),
             'val_loss':loss
         })
-        
-        # y_hat = torch.where(torch.sigmoid(y_hat) >= 0.5, 1, 0)
         return {"y_hat": y_hat, "val_loss": loss}
 
     def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x["val_loss"] for x in self.validation_step_outputs]).mean()
-        avg_miou = torch.stack([x["val_miou"] for x in self.validation_step_outputs]).mean()
-        # avg_iou_f = torch.stack([x["val_iou_f"] for x in self.validation_step_outputs]).mean()
-        # avg_iou_b = torch.stack([x["val_iou_b"] for x in self.validation_step_outputs]).mean()
-        avg_precision = torch.stack([x["val_precision"] for x in self.validation_step_outputs]).mean()
-        avg_recall = torch.stack([x["val_recall"] for x in self.validation_step_outputs]).mean()
-        avg_f1 = torch.stack([x["val_f1"] for x in self.validation_step_outputs]).mean()
+        avg_loss = torch.nanmean(torch.stack([x["val_loss"] for x in self.validation_step_outputs]))
+        avg_miou = torch.nanmean(torch.stack([x["val_miou"] for x in self.validation_step_outputs]))
+        avg_precision = torch.nanmean(torch.stack([x["val_precision"] for x in self.validation_step_outputs]))
+        avg_recall = torch.nanmean(torch.stack([x["val_recall"] for x in self.validation_step_outputs]))
+        avg_f1 = torch.nanmean(torch.stack([x["val_f1"] for x in self.validation_step_outputs]))
         
         self.log("val_loss", avg_loss, on_epoch=True, prog_bar=False)
         self.log("val_miou", avg_miou*100., on_epoch=True, prog_bar=True)
-        # self.log("val_iou_f", avg_iou_f*100., on_epoch=True, prog_bar=False)
-        # self.log("val_iou_b", avg_iou_b*100., on_epoch=True, prog_bar=False)
         self.log("val_precision", avg_precision*100., on_epoch=True, prog_bar=False)
         self.log("val_recall", avg_recall*100., on_epoch=True, prog_bar=False)
         self.log("val_f1", avg_f1*100., on_epoch=True, prog_bar=False)

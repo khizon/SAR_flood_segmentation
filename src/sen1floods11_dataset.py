@@ -89,8 +89,8 @@ class Sen1Floods11Dataset(Dataset):
             self.transform = None
         
         if debug:
-            # Return only 1 batch worth of data
-            self.dataset = self.dataset.sample(self.batch_size)
+            # Return only 2 batch worth of data
+            self.dataset = self.dataset.sample(2*self.batch_size)
 
         self.processor = processor
 
