@@ -25,7 +25,8 @@ def get_args():
     parser.add_argument("--target", type=str, default="Flood")
     parser.add_argument("--in_channels", type=int, default=3, metavar='N',
                         help='number of channels for the input image')
-    
+    parser.add_argument("--scheduler", type=str, default="CosineAnnealingLR")
+
     # Model
     parser.add_argument('--model', type=str, default='linknet')
     parser.add_argument('--backbone', type=str, default='mobilenet_v2')
@@ -189,7 +190,8 @@ if __name__ == '__main__':
         callbacks.append(early_stop_callback)
     
     # Define Total Model
-    model = SegModule(model, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout, loss=args.loss, debug=args.debug)
+    model = SegModule(model, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout,
+                      loss=args.loss, debug=args.debug, scheduler=args.scheduler)
     
     args.total_params = sum(
             param.numel() for param in model.parameters()

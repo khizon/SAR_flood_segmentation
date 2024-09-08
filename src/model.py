@@ -40,7 +40,8 @@ class BCEDiceLoss(torch.nn.Module):
         return combined_loss
 
 class SegModule(LightningModule):
-    def __init__(self, model, model_class='u-net', lr=1e-3, max_epochs=30, dropout=0.1, loss='dice', debug=True, **kwargs):
+    def __init__(self, model, model_class='u-net', lr=1e-3, max_epochs=30, dropout=0.1,
+                 loss='dice', debug=True, scheduler='CosineAnnealingLR', **kwargs):
         
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
@@ -48,6 +49,7 @@ class SegModule(LightningModule):
         self.model = model
         self.model_class = model_class
         self.debug = debug
+        self.scheduler = scheduler
         
         if loss == 'dice':
             self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
@@ -93,10 +95,13 @@ class SegModule(LightningModule):
  
     def configure_optimizers(self):
         optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
-        scheduler = CosineAnnealingLR(optimizer, T_max=self.max_epochs)
-        # scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2,
-        #                                         eta_min=0, last_epoch=-1, verbose=False)
-        return [optimizer], [scheduler]
+        
+        schedulers = {
+            'CosineAnnealingLR': CosineAnnealingLR(optimizer, T_max=self.max_epochs),
+            ' CosineAnnealingWarmRestarts': CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2,
+                                                eta_min=0, last_epoch=-1, verbose=False)
+        }
+        scheduler = schedulers[self.scheduler]
     
     def training_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
