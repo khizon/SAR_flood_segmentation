@@ -45,7 +45,7 @@ def s1_to_ratios(img):
     return multi_image
 
 class Sen1Floods11Dataset(Dataset):
-    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=False, processor=None):
+    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None):
         self.label_type = label_type
         self.target = target
         self.dataset = pd.read_csv(DF_PATH)
@@ -57,40 +57,55 @@ class Sen1Floods11Dataset(Dataset):
         if len(self.dataset) < self.batch_size:
             self.batch_size = len(self.dataset)
         
-        if transforms:
-            # define augmentation transforms
-            self.transform = A.Compose(
-                [
-                    A.RandomCrop(width=256, height=256),
-                    A.HorizontalFlip(p=0.5),
-                    A.Rotate(270),
-                    # A.RandomBrightness(limit=0.2, p=0.5),
-                    # A.RandomContrast(limit=0.2, p=0.5),
-                    # A.OneOf([
-                    #     A.Blur(blur_limit=7, p=1.0),
-                    #     A.GaussianBlur(blur_limit=7, p=1.0),
-                    #     A.MedianBlur(blur_limit=7, p=1.0),
-                    #     A.MotionBlur(blur_limit=7, p=1.0),
-                    #     A.AdvancedBlur(blur_limit=7, p=1.0),
-                    # ], p=0.5),
-                    # A.OneOf([
-                    #     A.GaussNoise(var_limit=(10, 50), p=1.0),
-                    #     A.CoarseDropout(max_holes=16, max_height=16, max_width=16, p=1.0),
-                    #     A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
-                    # ], p=0.5),
+        if len(transforms)>0:
+            if debug:
+                print(f'{split}: {transforms}')
+            all_transforms = []
+            if 'crop' in transforms:
+                all_transforms.append(A.RandomCrop(width=256, height=256))
+            if 'flip' in transforms:
+                all_transforms.append(A.HorizontalFlip(p=0.5))
+            if 'rotate' in transforms:
+                all_transforms.append(A.Rotate(270))
+            if 'lighting' in transforms:
+                all_transforms.extend([
+                    A.RandomBrightness(limit=0.2, p=0.5),
+                    A.RandomContrast(limit=0.2, p=0.5),
+                ])
+            if 'blur' in transforms:
+                all_transforms.append(
+                    A.OneOf([
+                        A.Blur(blur_limit=7, p=1.0),
+                        A.GaussianBlur(blur_limit=7, p=1.0),
+                        A.MedianBlur(blur_limit=7, p=1.0),
+                        A.MotionBlur(blur_limit=7, p=1.0),
+                        A.AdvancedBlur(blur_limit=7, p=1.0),
+                    ], p=0.5),
+                )
+            if 'noise' in transforms:
+                all_transforms.append(
+                    A.OneOf([
+                        A.GaussNoise(var_limit=(10, 50), p=1.0),
+                        A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
+                    ], p=0.5),
+                )
+            if 'distort' in transforms:
+                all_transforms.extend([
                     A.ElasticTransform(
-                        p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
-                    ),
+                            p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
+                        ),
                     A.GridDistortion(p=0.4),
                     A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
-                ], additional_targets={'image0':'image', 'mask0':'mask'}
+                ])
+            # define augmentation transforms
+            self.transform = A.Compose(all_transforms, additional_targets={'image0':'image', 'mask0':'mask'}
             )
         else:
             self.transform = None
         
         if debug:
             # Return only 2 batch worth of data
-            self.dataset = self.dataset.sample(2*self.batch_size)
+            self.dataset = self.dataset.sample(2*self.batch_size, replace=True)
 
         self.processor = processor
 
@@ -202,9 +217,9 @@ class Sen1Floods11DataModule(LightningDataModule):
         
     def prepare_data(self):
         self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor)
-        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.processor)
-        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, self.processor)
-        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, self.processor)
+        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
+        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
+        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
         
     def setup(self, stage=None):
         self.prepare_data()

@@ -21,11 +21,11 @@ def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
     # where dataset will be stored
     parser.add_argument("--path", type=str, default="sen1floods11")
-    parser.add_argument("--label_type", type=str, default="HandLabeled")
+    parser.add_argument("--label_type", type=str, default="WeaklyLabeled")
     parser.add_argument("--target", type=str, default="Flood")
     parser.add_argument("--in_channels", type=int, default=3, metavar='N',
                         help='number of channels for the input image')
-    parser.add_argument("--scheduler", type=str, default="CosineAnnealingLR")
+    parser.add_argument("--scheduler", type=str, default="CosineAnnealingWarmRestarts")
 
     # Model
     parser.add_argument('--model', type=str, default='linknet')
@@ -56,7 +56,7 @@ def get_args():
     parser.add_argument("--patience", default=10)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     
-    parser.add_argument("--transforms", action=argparse.BooleanOptionalAction)   
+    parser.add_argument("--transforms", type=str, nargs='+', default=['crop', 'flip', 'rotate', 'distort'], metavar='N',)   
     
     args = parser.parse_args()
     
@@ -219,21 +219,21 @@ if __name__ == '__main__':
     wandb.finish()
     
     # WandB cleanup
-    dry_run = False
-    api = wandb.Api(overrides={"project": "sar_seg_sen1floods11_2", "entity": "khizon"})
-    project = api.project('sar_seg_sen1floods11_2')
+    if not args.debug:
+        api = wandb.Api(overrides={"project": "sar_seg_sen1floods11_2", "entity": "khizon"})
+        project = api.project('sar_seg_sen1floods11_2')
 
 
-    for artifact_type in project.artifacts_types():
-        for artifact_collection in artifact_type.collections():
-            for version in api.artifact_versions(artifact_type.type, artifact_collection.name):
-                if artifact_type.type == 'model':
-                    if len(version.aliases) > 0:
-                        # print out the name of the one we are keeping
-                        print(f'KEEPING {version.name}')
-                    else:
-                        print(f'DELETING {version.name}')
-                        if not dry_run:
-                            version.delete()
+        for artifact_type in project.artifacts_types():
+            for artifact_collection in artifact_type.collections():
+                for version in api.artifact_versions(artifact_type.type, artifact_collection.name):
+                    if artifact_type.type == 'model':
+                        if len(version.aliases) > 0:
+                            # print out the name of the one we are keeping
+                            print(f'KEEPING {version.name}')
+                        else:
+                            print(f'DELETING {version.name}')
+                            if not dry_run:
+                                version.delete()
     
     

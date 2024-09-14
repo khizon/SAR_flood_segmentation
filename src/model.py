@@ -98,17 +98,19 @@ class SegModule(LightningModule):
         
         schedulers = {
             'CosineAnnealingLR': CosineAnnealingLR(optimizer, T_max=self.max_epochs),
-            ' CosineAnnealingWarmRestarts': CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2,
-                                                eta_min=0, last_epoch=-1, verbose=False)
+            'CosineAnnealingWarmRestarts': CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2,
+                                                eta_min=1e-8, last_epoch=-1, verbose=False)
         }
         scheduler = schedulers[self.scheduler]
+        
+        return [optimizer], [scheduler]
     
     def training_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         
         # Debug: Simulate NaN issue
-        if self.debug and (batch_idx==0):
-            x = torch.full_like(x, np.nan)
+        # if self.debug and (batch_idx==0) and (self.current_epoch==0):
+        #     x = torch.full_like(x, np.nan)
         
         y_hat = self(x)
         
