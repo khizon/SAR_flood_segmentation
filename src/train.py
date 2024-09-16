@@ -25,7 +25,7 @@ def get_args():
     parser.add_argument("--target", type=str, default="Flood")
     parser.add_argument("--in_channels", type=int, default=3, metavar='N',
                         help='number of channels for the input image')
-    parser.add_argument("--scheduler", type=str, default="CosineAnnealingWarmRestarts")
+    parser.add_argument("--scheduler", type=str, default="CosineAnnealingLR")
 
     # Model
     parser.add_argument('--model', type=str, default='linknet')
@@ -43,7 +43,7 @@ def get_args():
     parser.add_argument('--dropout', type=float, default=0.1)
     
     # 16-bit fp model to reduce the size
-    parser.add_argument("--precision", default=32)
+    parser.add_argument("--precision", default=16)
     parser.add_argument("--accelerator", default='auto')
     parser.add_argument("--devices", default=1)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -67,6 +67,11 @@ def get_args():
     if 'segformer' in args.__dict__['model']:
         args.__dict__['backbone'] = None
         args.__dict__['pre_trained'] = 'ade-512-512'
+        
+    if args.__dict__['label_type'] == 'WeaklyLabeled':
+        args.__dict__['precision'] = 32
+        args.__dict__['target'] = 'Flood'
+        args.__dict__['scheduler'] = 'CosineAnnealingWarmRestarts'
 
     return args
 
