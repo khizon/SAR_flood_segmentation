@@ -16,16 +16,19 @@ from utils import *
 import segmentation_models_pytorch as smp
 import wandb
 import argparse
+import gc
+from wandb_clean import cleanup_artifacts_per_run
 
 def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
     # where dataset will be stored
     parser.add_argument("--path", type=str, default="sen1floods11")
-    parser.add_argument("--label_type", type=str, default="WeaklyLabeled")
+    parser.add_argument("--label_type", type=str, default="HandLabeled")
     parser.add_argument("--target", type=str, default="Flood")
     parser.add_argument("--in_channels", type=int, default=3, metavar='N',
                         help='number of channels for the input image')
     parser.add_argument("--scheduler", type=str, default="CosineAnnealingLR")
+    parser.add_argument("--expand", type=float, default=1)
 
     # Model
     parser.add_argument('--model', type=str, default='linknet')
@@ -161,10 +164,16 @@ if __name__ == '__main__':
     print(f'Pytorch {torch.__version__}')
     seed_everything(42, workers=True)
     
+    if (not args.debug) and (not torch.cuda.is_available()):
+        print("CUDA not available")
+        sys.exit(1)
+    
     if args.label_type == 'HandLabeled':
         path = os.path.join(ROOT, args.path, 'hand_labeled.csv')
     elif args.label_type == 'WeaklyLabeled':
         path = os.path.join(ROOT, args.path, 'weak_labeled.csv')
+        
+    wandb_project = 'sar_seg_sen1floods11_2'
 
     model, image_processor = create_model(args)
 
@@ -172,7 +181,7 @@ if __name__ == '__main__':
     #                           debug=args.debug, transforms=args.transforms)
     print(f'CSV location:{path}')
     datamodule = Sen1Floods11DataModule(path, args.label_type, target=args.target, batch_size=args.batch_size, num_workers=args.num_workers,
-                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels)
+                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand)
     datamodule.setup()
     
     callbacks = []
@@ -205,7 +214,7 @@ if __name__ == '__main__':
             p.numel() for p in model.parameters() if p.requires_grad
         )
     
-    wandb_logger = WandbLogger(project='sar_seg_sen1floods11_2', log_model='all', config=vars(args))
+    wandb_logger = WandbLogger(project=wandb_project, log_model='all', config=vars(args))
     
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
@@ -223,22 +232,13 @@ if __name__ == '__main__':
     
     wandb.finish()
     
+    del datamodule, model, trainer
+    
     # WandB cleanup
-    if not args.debug:
-        api = wandb.Api(overrides={"project": "sar_seg_sen1floods11_2", "entity": "khizon"})
-        project = api.project('sar_seg_sen1floods11_2')
-
-
-        for artifact_type in project.artifacts_types():
-            for artifact_collection in artifact_type.collections():
-                for version in api.artifact_versions(artifact_type.type, artifact_collection.name):
-                    if artifact_type.type == 'model':
-                        if len(version.aliases) > 0:
-                            # print out the name of the one we are keeping
-                            print(f'KEEPING {version.name}')
-                        else:
-                            print(f'DELETING {version.name}')
-                            if not dry_run:
-                                version.delete()
+    # Example usage
+    project_name = wandb_project
+    entity = "khizon"
+    metric_name = "test_miou"  # Replace with your actual metric name
+    cleanup_artifacts_per_run(project_name, entity, metric_name, dry_run=args.debug)
     
     

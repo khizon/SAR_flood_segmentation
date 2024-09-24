@@ -45,11 +45,15 @@ def s1_to_ratios(img):
     return multi_image
 
 class Sen1Floods11Dataset(Dataset):
-    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None):
+    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None, expand=1):
         self.label_type = label_type
         self.target = target
         self.dataset = pd.read_csv(DF_PATH)
         self.dataset = self.dataset[(self.dataset['Split']==split) & (~self.dataset['Exclude'])]
+        if (split=='train') & (expand > 1):
+            print(f'Original Training dataset: {len(self.dataset)}')
+            self.dataset = self.dataset.sample(n=int(expand*len(self.dataset)), replace=True)
+            print(f'Expanded Training dataset: {len(self.dataset)}')
         self.batch_size=batch_size
         self.in_channels = in_channels
         self.ROOT = os.path.dirname(DF_PATH)
@@ -75,12 +79,12 @@ class Sen1Floods11Dataset(Dataset):
             if 'blur' in transforms:
                 all_transforms.append(
                     A.OneOf([
-                        A.Blur(blur_limit=7, p=1.0),
-                        A.GaussianBlur(blur_limit=7, p=1.0),
-                        A.MedianBlur(blur_limit=7, p=1.0),
-                        A.MotionBlur(blur_limit=7, p=1.0),
-                        A.AdvancedBlur(blur_limit=7, p=1.0),
-                    ], p=0.5),
+                        A.Blur(blur_limit=5, p=1.0),
+                        A.GaussianBlur(blur_limit=5, p=1.0),
+                        A.MedianBlur(blur_limit=5, p=1.0),
+                        A.MotionBlur(blur_limit=5, p=1.0),
+                        A.AdvancedBlur(blur_limit=5, p=1.0),
+                    ], p=0.3),
                 )
             if 'noise' in transforms:
                 all_transforms.append(
@@ -201,7 +205,7 @@ class Sen1Floods11Dataset(Dataset):
         return img
     
 class Sen1Floods11DataModule(LightningDataModule):
-    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, **kwargs):
+    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, expand=1, **kwargs):
         super().__init__(**kwargs)
         ROOT = os.getcwd()
         self.path = path
@@ -214,9 +218,10 @@ class Sen1Floods11DataModule(LightningDataModule):
         self.transforms=transforms
         self.in_channels = in_channels
         self.processor=processor
+        self.expand=expand
         
     def prepare_data(self):
-        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor)
+        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor, self.expand)
         self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
         self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
         self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
