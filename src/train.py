@@ -18,6 +18,7 @@ import wandb
 import argparse
 import gc
 from wandb_clean import cleanup_artifacts_per_run
+import sys
 
 def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
@@ -177,8 +178,6 @@ if __name__ == '__main__':
 
     model, image_processor = create_model(args)
 
-    # datamodule=ETCIDataModule(args.path, batch_size=args.batch_size, num_workers=args.num_workers,
-    #                           debug=args.debug, transforms=args.transforms)
     print(f'CSV location:{path}')
     datamodule = Sen1Floods11DataModule(path, args.label_type, target=args.target, batch_size=args.batch_size, num_workers=args.num_workers,
                               debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand)
@@ -235,10 +234,4 @@ if __name__ == '__main__':
     del datamodule, model, trainer
     
     # WandB cleanup
-    # Example usage
-    project_name = wandb_project
-    entity = "khizon"
-    metric_name = "test_miou"  # Replace with your actual metric name
-    cleanup_artifacts_per_run(project_name, entity, metric_name, dry_run=args.debug)
-    
-    
+    cleanup_artifacts_per_run(wandb_project, "khizon", dry_run=args.debug)

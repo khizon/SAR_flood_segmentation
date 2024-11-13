@@ -1,7 +1,7 @@
 import wandb
 from tqdm import tqdm
 
-def cleanup_artifacts_per_run(project_name, entity, metric_name, dry_run=True):
+def cleanup_artifacts_per_run(project_name, entity, dry_run=True):
     api = wandb.Api()
     
     # Get all runs in the project
@@ -23,22 +23,19 @@ def cleanup_artifacts_per_run(project_name, entity, metric_name, dry_run=True):
             print(f"No model artifacts found for run: {run.name}")
             continue
         
-        # Find the best model artifact based on the specified metric
+        # Find the model artifact tagged as "best"
         best_artifact = None
-        best_metric_value = float('-inf')
         
         for artifact in model_artifacts:
-            if metric_name in artifact.metadata:
-                metric_value = artifact.metadata[metric_name]
-                if metric_value > best_metric_value:
-                    best_metric_value = metric_value
-                    best_artifact = artifact
+            if "best" in artifact.aliases:
+                best_artifact = artifact
+                break
         
         if best_artifact is None:
-            print(f"No artifacts found with the metric '{metric_name}' for run: {run.name}")
+            print(f"No artifacts found with the 'best' tag for run: {run.name}")
             continue
         
-        print(f"Best artifact for run {run.name}: {best_artifact.name} with {metric_name} = {best_metric_value}")
+        print(f"Best artifact for run {run.name}: {best_artifact.name}")
         
         # Delete all other model artifacts for this run
         for artifact in model_artifacts:
