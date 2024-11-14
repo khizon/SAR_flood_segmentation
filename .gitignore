@@ -129,3 +129,6 @@ dmypy.json
 .pyre/
 
 sen1floods11*
+*.out
+*.slurm
+*/wandb/*

@@ -174,7 +174,7 @@ if __name__ == '__main__':
     elif args.label_type == 'WeaklyLabeled':
         path = os.path.join(ROOT, args.path, 'weak_labeled.csv')
         
-    wandb_project = 'sar_seg_sen1floods11_2'
+    wandb_project = 'sar_seg_sen1floods11_A100'
 
     model, image_processor = create_model(args)
 
@@ -222,7 +222,7 @@ if __name__ == '__main__':
                       logger=wandb_logger if args.wandb else None,
                       gradient_clip_val=0.5,
                       callbacks=callbacks,
-                      detect_anomaly=True                
+                      detect_anomaly=args.debug
                      )
     
     

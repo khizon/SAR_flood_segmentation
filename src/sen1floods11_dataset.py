@@ -49,7 +49,7 @@ class Sen1Floods11Dataset(Dataset):
         self.label_type = label_type
         self.target = target
         self.dataset = pd.read_csv(DF_PATH)
-        self.dataset = self.dataset[(self.dataset['Split']==split) & (~self.dataset['Exclude'])]
+        self.dataset = self.dataset[(self.dataset['Split']==split)]
         if (split=='train') & (expand > 1):
             print(f'Original Training dataset: {len(self.dataset)}')
             self.dataset = self.dataset.sample(n=int(expand*len(self.dataset)), replace=True)
@@ -95,9 +95,7 @@ class Sen1Floods11Dataset(Dataset):
                 )
             if 'distort' in transforms:
                 all_transforms.extend([
-                    A.ElasticTransform(
-                            p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
-                        ),
+                    A.ElasticTransform(p=0.4, alpha=120, sigma=120 * 0.05),
                     A.GridDistortion(p=0.4),
                     A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
                 ])
