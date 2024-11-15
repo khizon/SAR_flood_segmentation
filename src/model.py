@@ -87,9 +87,9 @@ class SegModule(LightningModule):
         
         # Post-processing step
         # Create a mask for pixels with value 999 in the first two channels of x
-        mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
+        # mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
         # Use the mask to set corresponding pixels in y_hat to 0
-        y_hat[mask] = 1e-7
+        # y_hat[mask] = 1e-7
         
         return y_hat
  
@@ -113,6 +113,12 @@ class SegModule(LightningModule):
         #     x = torch.full_like(x, np.nan)
         
         y_hat = self(x)
+
+        # Post-processing step
+        # Create a mask for pixels with value 999 in the first two channels of x
+        mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
+        # Use the mask to set corresponding pixels in y_hat to 0
+        y_hat[mask] = -1e8
         
         loss = self.loss(y_hat, y)
         
@@ -138,6 +144,7 @@ class SegModule(LightningModule):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         y_hat = self(x)
         loss = self.loss(y_hat, y)
+
         if dataloader_idx == 0:
             self.test_step_outputs.append({
                 'test_miou': self.jaccard_m(y_hat, y.int()),
