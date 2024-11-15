@@ -30,6 +30,7 @@ def get_args():
                         help='number of channels for the input image')
     parser.add_argument("--scheduler", type=str, default="CosineAnnealingLR")
     parser.add_argument("--expand", type=float, default=1)
+    parser.add_argument("--filter_data", action=argparse.BooleanOptionalAction)
 
     # Model
     parser.add_argument('--model', type=str, default='linknet')
@@ -60,7 +61,7 @@ def get_args():
     parser.add_argument("--patience", default=10)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     
-    parser.add_argument("--transforms", type=str, nargs='+', default=['crop', 'flip', 'rotate', 'distort'], metavar='N',)   
+    parser.add_argument("--transforms", type=str, nargs='+', default=['flip', 'rotate', 'distort'], metavar='N',)   
     
     args = parser.parse_args()
     
@@ -180,7 +181,7 @@ if __name__ == '__main__':
 
     print(f'CSV location:{path}')
     datamodule = Sen1Floods11DataModule(path, args.label_type, target=args.target, batch_size=args.batch_size, num_workers=args.num_workers,
-                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand)
+                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand, filter_data=args.filter_data)
     datamodule.setup()
     
     callbacks = []

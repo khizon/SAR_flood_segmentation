@@ -45,15 +45,23 @@ def s1_to_ratios(img):
     return multi_image
 
 class Sen1Floods11Dataset(Dataset):
-    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None, expand=1):
+    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None, expand=1, filter_data=False):
         self.label_type = label_type
         self.target = target
         self.dataset = pd.read_csv(DF_PATH)
         self.dataset = self.dataset[(self.dataset['Split']==split)]
+
+        if (filter_data):
+            self.dataset = self.dataset[
+                (self.dataset['NaN Pixels'] == 0) &
+                (self.dataset['Zero Label'] == False)
+            ]
+
         if (split=='train') & (expand > 1):
             print(f'Original Training dataset: {len(self.dataset)}')
             self.dataset = self.dataset.sample(n=int(expand*len(self.dataset)), replace=True)
             print(f'Expanded Training dataset: {len(self.dataset)}')
+        
         self.batch_size=batch_size
         self.in_channels = in_channels
         self.ROOT = os.path.dirname(DF_PATH)
@@ -65,6 +73,8 @@ class Sen1Floods11Dataset(Dataset):
             if debug:
                 print(f'{split}: {transforms}')
             all_transforms = []
+            if 'shiftscalerotate' in transforms:
+                all_transforms.append(A.ShiftScaleRotate(shift_limit=0.5, rotate_limit=270))
             if 'crop' in transforms:
                 all_transforms.append(A.RandomCrop(width=256, height=256))
             if 'flip' in transforms:
@@ -93,12 +103,24 @@ class Sen1Floods11Dataset(Dataset):
                         A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
                     ], p=0.5),
                 )
+            if 'perspective' in transforms:
+                all_transforms.append(A.Perspective(pad_val=-999, mask_pad_val=-1, p=0.25))
             if 'distort' in transforms:
                 all_transforms.extend([
                     A.ElasticTransform(p=0.4, alpha=120, sigma=120 * 0.05),
                     A.GridDistortion(p=0.4),
                     A.OpticalDistortion(distort_limit=2, shift_limit=0.5, p=0.4),
                 ])
+            if 'elastic' in transforms:
+                all_transforms.append(
+                   A.ElasticTransform(
+                            p=0.4, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03
+                        ) 
+                )
+            if 'griddistort' in transforms:
+                all_transforms.append(
+                    A.GridDistortion(p=0.4)
+                )
             # define augmentation transforms
             self.transform = A.Compose(all_transforms, additional_targets={'image0':'image', 'mask0':'mask'}
             )
@@ -162,7 +184,7 @@ class Sen1Floods11Dataset(Dataset):
         # Convert unlabeled pixels to 0
         # label = np.where(label == -1, 0, label)
             
-        # Convert NaNs to -99
+        # Convert NaNs to 999
         img = np.nan_to_num(img, 999)
         label = np.nan_to_num(label, -1)
         
@@ -203,7 +225,7 @@ class Sen1Floods11Dataset(Dataset):
         return img
     
 class Sen1Floods11DataModule(LightningDataModule):
-    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, expand=1, **kwargs):
+    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, expand=1, filter_data=False, **kwargs):
         super().__init__(**kwargs)
         ROOT = os.getcwd()
         self.path = path
@@ -217,12 +239,13 @@ class Sen1Floods11DataModule(LightningDataModule):
         self.in_channels = in_channels
         self.processor=processor
         self.expand=expand
+        self.filter_data=filter_data
         
     def prepare_data(self):
-        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor, self.expand)
-        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
-        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
-        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor)
+        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor, self.expand, self.filter_data)
+        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1 , self.filter_data)
+        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1, self.filter_data)
+        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1, self.filter_data)
         
     def setup(self, stage=None):
         self.prepare_data()
