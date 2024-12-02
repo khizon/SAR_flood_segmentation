@@ -89,7 +89,7 @@ class SegModule(LightningModule):
         # Create a mask for pixels with value 999 in the first two channels of x
         mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
         # Use the mask to set corresponding pixels in y_hat to 0
-        y_hat[mask] = -1e7
+        y_hat[mask] = -1e3
         
         return y_hat
  
@@ -113,19 +113,21 @@ class SegModule(LightningModule):
         #     x = torch.full_like(x, np.nan)
         
         y_hat = self(x)
+        # If y_hat or Loss contains NaNs, skip the batch.
+        if torch.isnan(y_hat).any():
+            print(f"Skipping Batch {batch_idx}: NaN detected on y_hat\n")
+            return None
         
         loss = self.loss(y_hat, y)
+
+        if torch.isnan(loss):
+            print(f"Skipping Batch {batch_idx}: Loss is NaN\n")
+            return None
         
         self.train_step_outputs.append({
             'train_loss': loss
         })
-        
-        # If there are NaNs in y_hat, replace those values with -1
-        if torch.isnan(y_hat).any():
-            print(f"Batch {batch_idx}: NaN detected")
-            print(f"y_hat: {y_hat}")
-            return None
-         
+
         return {'loss': loss}
         
     def on_train_epoch_end(self):
@@ -180,7 +182,16 @@ class SegModule(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         y_hat = self(x)
+
+        # If y_hat or Loss contains NaNs, skip the batch.
+        if torch.isnan(y_hat).any():
+            print(f"Validation {batch_idx}: NaN detected on y_hat\n")
+        
         loss = self.loss(y_hat, y)
+
+        if torch.isnan(loss):
+            print(f"Validation Batch {batch_idx}: Loss is NaN\n")
+        
         self.validation_step_outputs.append({
             'val_miou': self.jaccard_m(y_hat, y.int()),
             'val_precision':self.precision(y_hat, y.int()),
@@ -191,18 +202,23 @@ class SegModule(LightningModule):
         return {"y_hat": y_hat, "val_loss": loss}
 
     def on_validation_epoch_end(self):
-        avg_loss = torch.nanmean(torch.stack([x["val_loss"] for x in self.validation_step_outputs]))
-        avg_miou = torch.nanmean(torch.stack([x["val_miou"] for x in self.validation_step_outputs]))
-        avg_precision = torch.nanmean(torch.stack([x["val_precision"] for x in self.validation_step_outputs]))
-        avg_recall = torch.nanmean(torch.stack([x["val_recall"] for x in self.validation_step_outputs]))
-        avg_f1 = torch.nanmean(torch.stack([x["val_f1"] for x in self.validation_step_outputs]))
+        if self.validation_step_outputs:
+            avg_loss = torch.nanmean(torch.stack([x["val_loss"] for x in self.validation_step_outputs]))
+            avg_miou = torch.nanmean(torch.stack([x["val_miou"] for x in self.validation_step_outputs]))
+            avg_precision = torch.nanmean(torch.stack([x["val_precision"] for x in self.validation_step_outputs]))
+            avg_recall = torch.nanmean(torch.stack([x["val_recall"] for x in self.validation_step_outputs]))
+            avg_f1 = torch.nanmean(torch.stack([x["val_f1"] for x in self.validation_step_outputs]))
+            
+            self.log("val_loss", avg_loss, on_epoch=True, prog_bar=False)
+            self.log("val_miou", avg_miou*100., on_epoch=True, prog_bar=True)
+            self.log("val_precision", avg_precision*100., on_epoch=True, prog_bar=False)
+            self.log("val_recall", avg_recall*100., on_epoch=True, prog_bar=False)
+            self.log("val_f1", avg_f1*100., on_epoch=True, prog_bar=False)
+        else:
+            print("No valid validation batches were processed this epoch.")
         
-        self.log("val_loss", avg_loss, on_epoch=True, prog_bar=False)
-        self.log("val_miou", avg_miou*100., on_epoch=True, prog_bar=True)
-        self.log("val_precision", avg_precision*100., on_epoch=True, prog_bar=False)
-        self.log("val_recall", avg_recall*100., on_epoch=True, prog_bar=False)
-        self.log("val_f1", avg_f1*100., on_epoch=True, prog_bar=False)
         self.validation_step_outputs.clear()
+
         
         
 

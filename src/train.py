@@ -58,7 +58,7 @@ def get_args():
     
     # Early Stopping
     parser.add_argument("--delta", default=0.01)
-    parser.add_argument("--patience", default=10)
+    parser.add_argument("--patience", default=20)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     
     parser.add_argument("--transforms", type=str, nargs='+', default=['flip', 'rotate', 'distort'], metavar='N',)   
@@ -74,7 +74,7 @@ def get_args():
         args.__dict__['pre_trained'] = 'ade-512-512'
         
     if args.__dict__['label_type'] == 'WeaklyLabeled':
-        args.__dict__['precision'] = 32
+        # args.__dict__['precision'] = 32
         args.__dict__['target'] = 'Flood'
         args.__dict__['scheduler'] = 'CosineAnnealingWarmRestarts'
 

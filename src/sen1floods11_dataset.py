@@ -53,8 +53,7 @@ class Sen1Floods11Dataset(Dataset):
 
         if (filter_data):
             self.dataset = self.dataset[
-                (self.dataset['NaN Pixels'] == 0) &
-                (self.dataset['Zero Label'] == False)
+                (self.dataset['NaN Pixels'] == False)
             ]
 
         if (split=='train') & (expand > 1):
@@ -75,6 +74,8 @@ class Sen1Floods11Dataset(Dataset):
             all_transforms = []
             if 'shiftscalerotate' in transforms:
                 all_transforms.append(A.ShiftScaleRotate(shift_limit=0.5, rotate_limit=270))
+            if 'shiftscalerotate_10' in transforms:
+                all_transforms.append(A.ShiftScaleRotate(shift_limit=0.1, rotate_limit=270))
             if 'crop' in transforms:
                 all_transforms.append(A.RandomCrop(width=256, height=256))
             if 'flip' in transforms:
@@ -104,7 +105,7 @@ class Sen1Floods11Dataset(Dataset):
                     ], p=0.5),
                 )
             if 'perspective' in transforms:
-                all_transforms.append(A.Perspective(pad_val=-999, mask_pad_val=-1, p=0.25))
+                all_transforms.append(A.Perspective(pad_val=999, mask_pad_val=-1, p=0.25))
             if 'distort' in transforms:
                 all_transforms.extend([
                     A.ElasticTransform(p=0.4, alpha=120, sigma=120 * 0.05),
