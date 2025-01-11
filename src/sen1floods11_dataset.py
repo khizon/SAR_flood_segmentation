@@ -122,6 +122,10 @@ class Sen1Floods11Dataset(Dataset):
                 all_transforms.append(
                     A.GridDistortion(p=0.4)
                 )
+            if 'coarse_dropout' in transforms:
+                all_transforms.append( 
+                    A.CoarseDropout(max_holes=8, max_height=4, max_width=4, min_holes=1, min_height=1, min_width=1, fill_value=999, mask_fill_value=-1, p=0.4)
+                )
             # define augmentation transforms
             self.transform = A.Compose(all_transforms, additional_targets={'image0':'image', 'mask0':'mask'}
             )

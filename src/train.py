@@ -74,7 +74,7 @@ def get_args():
         args.__dict__['pre_trained'] = 'ade-512-512'
         
     if args.__dict__['label_type'] == 'WeaklyLabeled':
-        # args.__dict__['precision'] = 32
+        args.__dict__['precision'] = 'bf16'
         args.__dict__['target'] = 'Flood'
         args.__dict__['scheduler'] = 'CosineAnnealingWarmRestarts'
 
@@ -169,6 +169,10 @@ if __name__ == '__main__':
     if (not args.debug) and (not torch.cuda.is_available()):
         print("CUDA not available")
         sys.exit(1)
+
+    if torch.cuda.is_available():
+        if ('A100' in torch.cuda.get_device_name()) and (args.precision == 'bf16'):
+            torch.set_float32_matmul_precision('medium')
     
     if args.label_type == 'HandLabeled':
         path = os.path.join(ROOT, args.path, 'hand_labeled.csv')
@@ -223,7 +227,7 @@ if __name__ == '__main__':
                       logger=wandb_logger if args.wandb else None,
                       gradient_clip_val=0.5,
                       callbacks=callbacks,
-                      detect_anomaly=args.debug
+                      detect_anomaly=True
                      )
     
     

@@ -139,6 +139,10 @@ class SegModule(LightningModule):
     def test_step(self, batch, batch_idx, dataloader_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
         y_hat = self(x)
+        if torch.isnan(y_hat).any():
+            print(f"Test {dataloader_idx}_{batch_idx}: NaN detected on y_hat\n")
+            y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
+
         loss = self.loss(y_hat, y)
 
         if dataloader_idx == 0:
@@ -186,6 +190,7 @@ class SegModule(LightningModule):
         # If y_hat or Loss contains NaNs, skip the batch.
         if torch.isnan(y_hat).any():
             print(f"Validation {batch_idx}: NaN detected on y_hat\n")
+            y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
         
         loss = self.loss(y_hat, y)
 
