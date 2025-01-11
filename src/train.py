@@ -37,7 +37,7 @@ def get_args():
     parser.add_argument('--backbone', type=str, default='mobilenet_v2')
     parser.add_argument('--loss', type=str, default='dice')
     parser.add_argument('--pre_trained', default='no')
-    
+
     #Model Hyperparameters
     parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: )')
@@ -46,33 +46,33 @@ def get_args():
     parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
                         help='learning rate (default: 1e-3)')
     parser.add_argument('--dropout', type=float, default=0.1)
-    
+
     # 16-bit fp model to reduce the size
     parser.add_argument("--precision", default=16)
     parser.add_argument("--accelerator", default='auto')
     parser.add_argument("--devices", default=1)
     parser.add_argument("--num_workers", type=int, default=4)
-    
+
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction)
-    
+
     # Early Stopping
     parser.add_argument("--delta", default=0.01)
     parser.add_argument("--patience", default=20)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
-    
-    parser.add_argument("--transforms", type=str, nargs='+', default=['flip', 'rotate', 'distort'], metavar='N',)   
-    
+
+    parser.add_argument("--transforms", type=str, nargs='+', default=['flip', 'rotate', 'distort'], metavar='N',)
+
     args = parser.parse_args()
-    
+
     for k in args.__dict__:
         if args.__dict__[k] is None:
             args.__dict__[k] = True
-            
+
     if 'segformer' in args.__dict__['model']:
         args.__dict__['backbone'] = None
         args.__dict__['pre_trained'] = 'ade-512-512'
-        
+
     if args.__dict__['label_type'] == 'WeaklyLabeled':
         args.__dict__['precision'] = 'bf16'
         args.__dict__['target'] = 'Flood'
@@ -81,13 +81,13 @@ def get_args():
     return args
 
 class LogPredictionsCallback(Callback):
-            
+
     def on_test_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         """Called when the test batch ends."""
         if batch_idx==0:
             self.log_table(batch, outputs, set='test')
-           
+
     def log_table(self, batch, outputs, set='val'):
         class_labels = {-1: "N/A", 0: "Not Flood", 1: "Flood"}
         x, y = batch['img'], batch['label'],
@@ -119,7 +119,7 @@ class LogPredictionsCallback(Callback):
         wandb_logger.log_table(key=f'SAR Flood Detection-{set}', columns=columns, data=data)
 
 def create_model(args):
-    
+
     model_class = {
         "u-net": smp.Unet,
         "linknet": smp.Linknet,
@@ -130,7 +130,7 @@ def create_model(args):
         "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
     }
     image_processor = None
-    
+
     if args.model in model_class.keys():
         if args.model != 'fcn':
             model = model_class[args.model](
@@ -142,7 +142,7 @@ def create_model(args):
         else:
             model = model_class[args.model]
             model.classifier[4] = nn.Conv2d(512, 1, kernel_size=(1, 1), stride=(1, 1))
-        
+
     elif 'segformer' in args.model:
         id2label = {'0': 'flood'}
         label2id = {v:k for k, v in id2label.items()}
@@ -155,7 +155,7 @@ def create_model(args):
         # for param in model.segformer.encoder.parameters():
         #     param.requires_grad = False
         image_processor = AutoImageProcessor.from_pretrained(model_weights)
-    
+
     return model, image_processor
 
 if __name__ == '__main__':
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     print(f'Current Working Directory: {ROOT}')
     print(f'Pytorch {torch.__version__}')
     seed_everything(42, workers=True)
-    
+
     if (not args.debug) and (not torch.cuda.is_available()):
         print("CUDA not available")
         sys.exit(1)
@@ -173,12 +173,12 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         if ('A100' in torch.cuda.get_device_name()) and (args.precision == 'bf16'):
             torch.set_float32_matmul_precision('medium')
-    
+
     if args.label_type == 'HandLabeled':
         path = os.path.join(ROOT, args.path, 'hand_labeled.csv')
     elif args.label_type == 'WeaklyLabeled':
         path = os.path.join(ROOT, args.path, 'weak_labeled.csv')
-        
+
     wandb_project = 'sar_seg_sen1floods11_A100'
 
     model, image_processor = create_model(args)
@@ -187,7 +187,7 @@ if __name__ == '__main__':
     datamodule = Sen1Floods11DataModule(path, args.label_type, target=args.target, batch_size=args.batch_size, num_workers=args.num_workers,
                               debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand, filter_data=args.filter_data)
     datamodule.setup()
-    
+
     callbacks = []
     model_checkpoint = ModelCheckpoint(
             dirpath=os.path.join("checkpoints"),
@@ -197,29 +197,29 @@ if __name__ == '__main__':
             monitor='val_miou',
             mode='max',
         )
-    
+
     callbacks.append(model_checkpoint)
     log_predictions_callback = LogPredictionsCallback()
     callbacks.append(log_predictions_callback)
-    
+
     if args.early_stop:
         early_stop_callback = EarlyStopping(monitor="val_miou",
                                             min_delta=args.delta, patience=args.patience, verbose=False, mode="max")
         callbacks.append(early_stop_callback)
-    
+
     # Define Total Model
     model = SegModule(model, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout,
                       loss=args.loss, debug=args.debug, scheduler=args.scheduler)
-    
+
     args.total_params = sum(
             param.numel() for param in model.parameters()
         )
     args.trainable_params = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )
-    
+
     wandb_logger = WandbLogger(project=wandb_project, log_model='all', config=vars(args))
-    
+
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else args.accelerator,
                       devices=args.devices,
                       precision=args.precision,
@@ -229,14 +229,14 @@ if __name__ == '__main__':
                       callbacks=callbacks,
                       detect_anomaly=True
                      )
-    
-    
+
+
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule, ckpt_path='best')
-    
+
     wandb.finish()
-    
+
     del datamodule, model, trainer
-    
+
     # WandB cleanup
     cleanup_artifacts_per_run(wandb_project, "khizon", dry_run=args.debug)
