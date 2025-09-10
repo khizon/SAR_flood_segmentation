@@ -19,6 +19,7 @@ import argparse
 import gc
 from wandb_clean import cleanup_artifacts_per_run
 import sys
+from dotenv import load_dotenv
 
 def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
@@ -159,12 +160,14 @@ def create_model(args):
     return model, image_processor
 
 if __name__ == '__main__':
+    load_dotenv()
     ROOT = os.getcwd()
     args = get_args()
     print(args)
     print(f'Current Working Directory: {ROOT}')
     print(f'Pytorch {torch.__version__}')
     seed_everything(42, workers=True)
+    wandb.login(key=os.getenv('WANB_API_KEY'))
     
     if (not args.debug) and (not torch.cuda.is_available()):
         print("CUDA not available")
