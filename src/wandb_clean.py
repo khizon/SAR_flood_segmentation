@@ -1,5 +1,7 @@
 import wandb
 from tqdm import tqdm
+import os
+import shutil
 
 def cleanup_artifacts_per_run(project_name, entity, dry_run=True):
     api = wandb.Api()
@@ -47,3 +49,20 @@ def cleanup_artifacts_per_run(project_name, entity, dry_run=True):
                 print(f'KEEPING {artifact.name}')
     
     print("\nArtifact cleanup completed.")
+
+def cleanup_cache(ROOT):
+    # Go one directory above ROOT
+    parent_dir = os.path.dirname(ROOT)
+    cache_dir = os.path.join(parent_dir, ".cache")
+
+    if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
+        # Remove all contents inside .cache, but keep the folder itself
+        for item in os.listdir(cache_dir):
+            item_path = os.path.join(cache_dir, item)
+            if os.path.isfile(item_path) or os.path.islink(item_path):
+                os.remove(item_path)
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+        print(f"Cleared contents of {cache_dir}")
+    else:
+        print(f"No .cache directory found above {ROOT}")
