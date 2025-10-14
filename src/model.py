@@ -223,8 +223,3 @@ class SegModule(LightningModule):
             print("No valid validation batches were processed this epoch.")
         
         self.validation_step_outputs.clear()
-
-        
-        
-
-    
