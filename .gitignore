@@ -134,3 +134,4 @@ sen1floods11*
 /wandb/*
 *.err
 /checkpoints/*
+/artifacts/*
