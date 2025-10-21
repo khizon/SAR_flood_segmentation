@@ -56,13 +56,21 @@ def cleanup_cache(ROOT):
     cache_dir = os.path.join(parent_dir, ".cache")
 
     if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
-        # Remove all contents inside .cache, but keep the folder itself
+        # Define the directory to preserve
+        preserve_dir = os.path.join(cache_dir, "torch", "hub", "checkpoints")
+
         for item in os.listdir(cache_dir):
             item_path = os.path.join(cache_dir, item)
+
+            # Skip the torch/hub/checkpoints directory
+            if os.path.commonpath([item_path, preserve_dir]) == preserve_dir:
+                continue
+
             if os.path.isfile(item_path) or os.path.islink(item_path):
                 os.remove(item_path)
             elif os.path.isdir(item_path):
                 shutil.rmtree(item_path)
-        print(f"Cleared contents of {cache_dir}")
+
+        print(f"Cleared contents of {cache_dir}, except {preserve_dir}")
     else:
         print(f"No .cache directory found above {ROOT}")

@@ -1,0 +1,258 @@
+from pytorch_lightning import LightningModule
+from torchmetrics.classification import BinaryJaccardIndex, BinaryPrecision, BinaryRecall, BinaryF1Score
+from torch.optim import Adam
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
+import segmentation_models_pytorch as smp
+import torch
+import numpy as np
+import wandb
+from transformers import AutoImageProcessor
+import os
+
+class FocalDiceLoss(torch.nn.Module):
+    def __init__(self, mode="binary", gamma=2, alpha=0.5):
+        super(FocalDiceLoss, self).__init__()
+        self.dice_loss = smp.losses.DiceLoss(mode=mode)
+        self.focal_loss = smp.losses.FocalLoss(mode=mode, gamma=gamma, alpha=alpha)
+
+    def forward(self, pred, target):
+        dice_loss = self.dice_loss(pred, target)
+        focal_loss = self.focal_loss(pred, target)
+        combined_loss = (dice_loss + focal_loss) / 2.0
+        return combined_loss
+    
+class BCEDiceLoss(torch.nn.Module):
+    def __init__(self, mode="binary"):
+        super(BCEDiceLoss, self).__init__()
+        self.dice_loss = smp.losses.DiceLoss(mode=mode)
+        self.BCE_loss = smp.losses.SoftBCEWithLogitsLoss()
+
+    def forward(self, pred, target):
+        dice_loss = self.dice_loss(pred, target)
+        bce_loss = self.BCE_loss(pred, target)
+        combined_loss = (dice_loss + bce_loss) / 2.0
+        return combined_loss
+
+class DistillModel(LightningModule):
+    def __init__(self, student_model, teacher, model_class='', lr=1e-3, max_epochs=30, dropout=0.1,
+                 loss='dice', debug=True, scheduler='CosineAnnealingLR', alpha=0.5, precision=16, **kwargs):
+        super().__init__()
+        self.save_hyperparameters(ignore=['model'])
+
+        self.student_model=student_model
+        self.teacher=teacher
+        self.debug=debug
+        self.scheduler=scheduler
+        self.alpha = alpha
+        self.precision=precision
+
+        if loss == 'dice':
+            self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
+        elif loss == 'BCE':
+            self.loss = smp.losses.SoftBCEWithLogitsLoss(ignore_index=-1)
+        elif loss == 'focal':
+            self.loss = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
+        elif loss == 'Focal+Dice':
+            self.loss = FocalDiceLoss()
+        elif loss == 'BCE+Dice':
+            self.loss = BCEDiceLoss()
+
+        self.distill_loss = self.loss
+
+        # self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
+        self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(ignore_index=-1), BinaryPrecision(ignore_index=-1), BinaryRecall(ignore_index=-1), BinaryF1Score(ignore_index=-1)
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
+        self.holdout_step_outputs = []
+        self.train_step_outputs = []
+        self.max_epochs=max_epochs
+        self.lr = lr
+        self.dropout=torch.nn.Dropout(dropout)
+
+    def forward(self, x):
+
+        y_hat = self.student_model(x)
+        y_teacher = None
+
+        if self.training:
+            y_hat = self.dropout(y_hat)
+            self.teacher_model = self.create_teacher_model()
+            self.teacher_model.eval()
+
+            with torch.no_grad():
+                y_teacher = self.teacher_model(x)
+
+        # Post-processing step
+        # Create a mask for pixels with value 999 in the first two channels of x
+        mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
+        # Use the mask to set corresponding pixels in y_hat to 0
+        y_hat[mask] = -1e3
+        
+        # Return differently depending on mode
+        if self.training:
+            return y_hat, y_teacher
+        else:
+            return y_hat
+
+    def configure_optimizers(self):
+        optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
+        
+        schedulers = {
+            'CosineAnnealingLR': CosineAnnealingLR(optimizer, T_max=self.max_epochs),
+            'CosineAnnealingWarmRestarts': CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2,
+                                                eta_min=1e-8, last_epoch=-1, verbose=False)
+        }
+        scheduler = schedulers[self.scheduler]
+        
+        return [optimizer], [scheduler]
+    
+    def training_step(self, batch, batch_idx):
+        x, y = batch['img'], batch['label'].unsqueeze(dim=1)
+        
+        # Debug: Simulate NaN issue
+        # if self.debug and (batch_idx==0) and (self.current_epoch==0):
+        #     x = torch.full_like(x, np.nan)
+        
+        y_hat, y_teacher = self(x)
+        # If y_hat or Loss contains NaNs, skip the batch.
+        if torch.isnan(y_hat).any():
+            print(f"Skipping Batch {batch_idx}: NaN detected on y_hat\n")
+            return None
+        
+        loss = (self.alpha*(self.loss(y_hat, y)) +
+                (1-self.alpha)*(self.distill_loss(y_hat, y_teacher))
+        )
+
+        if torch.isnan(loss):
+            print(f"Skipping Batch {batch_idx}: Loss is NaN\n")
+            return None
+        
+        self.train_step_outputs.append({
+            'train_loss': loss
+        })
+
+        return {'loss': loss}
+        
+    def on_train_epoch_end(self):
+        avg_loss = torch.nanmean(torch.stack([x["train_loss"] for x in self.train_step_outputs]))
+        self.log("train_loss", avg_loss, on_epoch=True, prog_bar=True)
+        self.train_step_outputs.clear()
+        
+
+    def test_step(self, batch, batch_idx, dataloader_idx):
+        x, y = batch['img'], batch['label'].unsqueeze(dim=1)
+        y_hat = self(x)
+        if torch.isnan(y_hat).any():
+            print(f"Test {dataloader_idx}_{batch_idx}: NaN detected on y_hat\n")
+            y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
+
+        loss = self.loss(y_hat, y)
+
+        if dataloader_idx == 0:
+            self.test_step_outputs.append({
+                'test_miou': self.jaccard_m(y_hat, y.int()),
+                'test_precision':self.precision(y_hat, y.int()),
+                'test_recall':self.recall(y_hat, y.int()),
+                'test_f1':self.f1(y_hat, y.int()),
+                'test_loss':loss
+            })
+        else:
+            self.holdout_step_outputs.append({
+                'test_miou': self.jaccard_m(y_hat, y.int()),
+                'test_precision':self.precision(y_hat, y.int()),
+                'test_recall':self.recall(y_hat, y.int()),
+                'test_f1':self.f1(y_hat, y.int()),
+                'test_loss':loss
+            })
+        
+        y_hat = torch.where(torch.sigmoid(y_hat) >= 0.5, 1, 0)
+        return {"y_hat": y_hat, "test_loss": loss}
+
+    def on_test_epoch_end(self):
+        results = [self.test_step_outputs, self.holdout_step_outputs]
+        
+        for idx, result in enumerate(results):
+            d_idx = {0: 'test', 1: 'holdout'}
+            avg_loss = torch.nanmean(torch.stack([x["test_loss"] for x in result]))
+            avg_miou = torch.nanmean(torch.stack([x["test_miou"] for x in result]))
+            avg_precision = torch.nanmean(torch.stack([x["test_precision"] for x in result]))
+            avg_recall = torch.nanmean(torch.stack([x["test_recall"] for x in result]))
+            avg_f1 = torch.nanmean(torch.stack([x["test_f1"] for x in result]))
+
+            self.log(f"{d_idx[idx]}_loss", avg_loss, on_epoch=True, prog_bar=False)
+            self.log(f"{d_idx[idx]}_miou", avg_miou*100., on_epoch=True, prog_bar=True)
+            self.log(f"{d_idx[idx]}_precision", avg_precision*100., on_epoch=True, prog_bar=False)
+            self.log(f"{d_idx[idx]}_recall", avg_recall*100., on_epoch=True, prog_bar=False)
+            self.log(f"{d_idx[idx]}_f1", avg_f1*100., on_epoch=True, prog_bar=False)
+            result.clear()
+        
+    def validation_step(self, batch, batch_idx):
+        x, y = batch['img'], batch['label'].unsqueeze(dim=1)
+        y_hat = self(x)
+
+        # If y_hat or Loss contains NaNs, skip the batch.
+        if torch.isnan(y_hat).any():
+            print(f"Validation {batch_idx}: NaN detected on y_hat\n")
+            y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
+        
+        loss = self.loss(y_hat, y)
+
+        if torch.isnan(loss):
+            print(f"Validation Batch {batch_idx}: Loss is NaN\n")
+        
+        self.validation_step_outputs.append({
+            'val_miou': self.jaccard_m(y_hat, y.int()),
+            'val_precision':self.precision(y_hat, y.int()),
+            'val_recall':self.recall(y_hat, y.int()),
+            'val_f1':self.f1(y_hat, y.int()),
+            'val_loss':loss
+        })
+        return {"y_hat": y_hat, "val_loss": loss}
+
+    def on_validation_epoch_end(self):
+        if self.validation_step_outputs:
+            avg_loss = torch.nanmean(torch.stack([x["val_loss"] for x in self.validation_step_outputs]))
+            avg_miou = torch.nanmean(torch.stack([x["val_miou"] for x in self.validation_step_outputs]))
+            avg_precision = torch.nanmean(torch.stack([x["val_precision"] for x in self.validation_step_outputs]))
+            avg_recall = torch.nanmean(torch.stack([x["val_recall"] for x in self.validation_step_outputs]))
+            avg_f1 = torch.nanmean(torch.stack([x["val_f1"] for x in self.validation_step_outputs]))
+            
+            self.log("val_loss", avg_loss, on_epoch=True, prog_bar=False)
+            self.log("val_miou", avg_miou*100., on_epoch=True, prog_bar=True)
+            self.log("val_precision", avg_precision*100., on_epoch=True, prog_bar=False)
+            self.log("val_recall", avg_recall*100., on_epoch=True, prog_bar=False)
+            self.log("val_f1", avg_f1*100., on_epoch=True, prog_bar=False)
+        else:
+            print("No valid validation batches were processed this epoch.")
+        
+        self.validation_step_outputs.clear()
+
+    def create_teacher_model(self):
+        ROOT = os.getcwd()
+        TEACHER_PATH = os.path.join(ROOT, 'artifacts', self.teacher, 'model.ckpt')
+        if not os.path.exists(TEACHER_PATH):
+            self.download_model()
+
+        weights = torch.load(TEACHER_PATH)['state_dict']
+        new_state_dict = {}
+        for key, value in weights.items():
+            new_key = key.replace("model.", "")
+            new_state_dict[new_key] = value
+        teacher_model = smp.UnetPlusPlus(
+                    encoder_name= 'resnet50',
+                    encoder_weights= None,
+                    in_channels=3,
+                    classes=1
+                )
+        # Load the state dictionary into the base model
+        teacher_model.load_state_dict(new_state_dict)
+
+        if self.precision == 16:
+            teacher_model.cuda().half()
+        return teacher_model
+    
+    def download_model(self):
+        run = wandb.init()
+        artifact = run.use_artifact(f'khizon/sar_seg_sen1floods11_A100/{self.teacher}', type='model')
+        _ = artifact.download()
+        wandb.finish()
