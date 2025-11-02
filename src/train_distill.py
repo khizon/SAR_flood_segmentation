@@ -49,6 +49,7 @@ def get_args():
     parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
                         help='learning rate (default: 1e-3)')
     parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument("--T", type=float, default=1.0)
     parser.add_argument("--alpha", type=float, default=0.5)
 
     # 16-bit fp model to reduce the size
@@ -217,7 +218,7 @@ if __name__ == '__main__':
 
     # Define Total Model
     model = DistillModel(model, teacher=args.teacher, model_class=args.model, lr=args.lr, max_epochs=args.max_epochs, dropout=args.dropout,
-                      loss=args.loss, debug=args.debug, scheduler=args.scheduler, alpha=args.alpha, precision=args.precision)
+                      loss=args.loss, debug=args.debug, scheduler=args.scheduler, T=args.T, alpha=args.alpha, precision=args.precision)
 
     args.total_params = sum(
             param.numel() for param in model.parameters()

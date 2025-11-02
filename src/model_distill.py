@@ -33,9 +33,23 @@ class BCEDiceLoss(torch.nn.Module):
         combined_loss = (dice_loss + bce_loss) / 2.0
         return combined_loss
 
+class DistillationLoss(torch.nn.Module):
+    def __init__(self, temperature=1.0, reduction='batchmean'):
+        super(DistillationLoss, self).__init__()
+        self.temperature = temperature
+        self.reduction = reduction
+        self.kl_div = torch.nn.KLDivLoss(reduction=reduction)
+
+    def forward(self, student_logits, teacher_logits):
+        T = self.temperature
+        student_log_probs = torch.nn.LogSoftmax(dim=1)(student_logits / T)
+        teacher_probs = torch.nn.Softmax(dim=1)(teacher_logits / T)
+        loss = self.kl_div(student_log_probs, teacher_probs) * (T ** 2)
+        return loss
+
 class DistillModel(LightningModule):
     def __init__(self, student_model, teacher, model_class='', lr=1e-3, max_epochs=30, dropout=0.1,
-                 loss='dice', debug=True, scheduler='CosineAnnealingLR', alpha=0.5, precision=16, **kwargs):
+                 loss='dice', debug=True, scheduler='CosineAnnealingLR', T=1.0, alpha=0.5, precision=16, **kwargs):
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
 
@@ -57,7 +71,7 @@ class DistillModel(LightningModule):
         elif loss == 'BCE+Dice':
             self.loss = BCEDiceLoss()
 
-        self.distill_loss = self.loss
+        self.distill_loss = DistillationLoss(temperature=T)
 
         # self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(ignore_index=-1), BinaryPrecision(ignore_index=-1), BinaryRecall(ignore_index=-1), BinaryF1Score(ignore_index=-1)
