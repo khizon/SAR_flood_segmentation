@@ -58,7 +58,7 @@ class DistillModel(LightningModule):
         self.debug=debug
         self.scheduler=scheduler
         self.alpha = alpha
-        self.precision=precision
+        self.fp=precision
 
         if loss == 'dice':
             self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
@@ -84,7 +84,9 @@ class DistillModel(LightningModule):
         self.dropout=torch.nn.Dropout(dropout)
 
     def forward(self, x):
-
+        # Assert dtype and device
+        # assert x.dtype == torch.bfloat16, f"Expected bf16 input, got {x.dtype}"
+        # assert x.device.type == "cuda", f"Expected CUDA tensor, got {x.device}"
         y_hat = self.student_model(x)
         y_teacher = None
 
@@ -92,6 +94,7 @@ class DistillModel(LightningModule):
             y_hat = self.dropout(y_hat)
             self.teacher_model = self.create_teacher_model()
             self.teacher_model.eval()
+
 
             with torch.no_grad():
                 y_teacher = self.teacher_model(x)
@@ -261,8 +264,8 @@ class DistillModel(LightningModule):
         # Load the state dictionary into the base model
         teacher_model.load_state_dict(new_state_dict)
 
-        if self.precision == 16:
-            teacher_model.cuda().half()
+        if self.fp == 'bf16':
+            teacher_model = teacher_model.cuda().to(dtype=torch.bfloat16)
         return teacher_model
     
     def download_model(self):
