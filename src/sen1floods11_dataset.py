@@ -45,7 +45,7 @@ def s1_to_ratios(img):
     return multi_image
 
 class Sen1Floods11Dataset(Dataset):
-    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None, expand=1, filter_data=False):
+    def __init__(self, DF_PATH, split='train', label_type='HandLabeled', target="Flood", debug=False, in_channels=3, batch_size=8, transforms=[], processor=None, expand=1, filter_data=False, normalize=False):
         self.label_type = label_type
         self.target = target
         self.dataset = pd.read_csv(DF_PATH)
@@ -138,6 +138,8 @@ class Sen1Floods11Dataset(Dataset):
 
         self.processor = processor
 
+        self.normalize = normalize
+
     def __len__(self):
         return self.dataset.shape[0]
 
@@ -171,7 +173,7 @@ class Sen1Floods11Dataset(Dataset):
         label = imread(label_path)
         water = imread(water_path) if water_path else None
         otsu = imread(otsu_path) if otsu_path else None
-  
+
         if self.in_channels==7:
             # Make the image multi channel
             img = s1_to_ratios(img)
@@ -180,7 +182,10 @@ class Sen1Floods11Dataset(Dataset):
         else:
             # Create a 3rd channel using ratio of VV and VH layers
             img = s1_to_rgb(img)
-        
+
+        if self.normalize:
+            img = self.clip_and_normalize(img)
+
         if self.target == 'Water':
             label = water
         elif self.target == 'Combined':
@@ -218,19 +223,39 @@ class Sen1Floods11Dataset(Dataset):
     def get_classes(self):
         class_counts = self.dataset['Region'].value_counts()
         return [1/class_counts[i] for i in self.dataset.Region.values]
-    
-    def normalize_img(self, img, mean, std):
-        # Clip
-        # img = np.clip(img, -50, 1)
-        # img = (img + 50) / 51
-        # img shape: C x H x W
-        # mean and std are lists of length C
-        for c in range(img.shape[0]):
-            img[c, :, :] = (img[c, :, :] - mean[c]) / std[c]
-        return img
+
+    def clip_and_normalize(self, img: np.ndarray) -> np.ndarray:
+        """
+        Clip and normalize a 3-channel dB image to [0, 255].
+
+        Parameters
+        ----------
+        img : np.ndarray
+            Input image of shape (H, W, 3) or (3, H, W), with pixel values in dB.
+
+        Returns
+        -------
+        np.ndarray
+            Normalized image of shape (3, H, W), dtype=np.float32, values in [0, 255].
+        """
+        # Ensure channel-last format for processing
+        if img.ndim == 3 and img.shape[0] == 3:
+            img = np.transpose(img, (1, 2, 0))  # (H, W, 3)
+
+        # Clip to [-30, 0] dB
+        img_clipped = np.clip(img, -30, 0)
+
+        # Normalize to [0, 255]
+        img_norm = (img_clipped - (-30)) / (0 - (-30)) * 255.0
+
+        # Convert back to channel-first (3, H, W)
+        img_cf = np.transpose(img_norm, (2, 0, 1))
+
+        return img_cf.astype(np.float32)
+
     
 class Sen1Floods11DataModule(LightningDataModule):
-    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, expand=1, filter_data=False, **kwargs):
+    def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, expand=1, filter_data=False, normalize=False, **kwargs):
         super().__init__(**kwargs)
         ROOT = os.getcwd()
         self.path = path
@@ -245,12 +270,13 @@ class Sen1Floods11DataModule(LightningDataModule):
         self.processor=processor
         self.expand=expand
         self.filter_data=filter_data
+        self.normalize=normalize
         
     def prepare_data(self):
-        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor, self.expand, self.filter_data)
-        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1 , self.filter_data)
-        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1, self.filter_data)
-        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1, self.filter_data)
+        self.train_dataset=Sen1Floods11Dataset(self.path, 'train', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, self.transforms, self.processor, self.expand, self.filter_data, self.normalize)
+        self.val_dataset=Sen1Floods11Dataset(self.path, 'valid', self.label_type, self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1 , self.filter_data, self.normalize)
+        self.test_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'test', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1, self.filter_data, self.normalize)
+        self.holdout_dataset=Sen1Floods11Dataset(self.hand_labeled_path, 'hold out', 'HandLabeled', self.target, self.debug, self.in_channels, self.batch_size, [], self.processor, 1, self.filter_data, self.normalize)
         
     def setup(self, stage=None):
         self.prepare_data()
