@@ -11,6 +11,7 @@ from pytorch_lightning.loggers import WandbLogger
 # from etci_dataset import ETCIDataset, ETCIDataModule
 from sen1floods11_dataset import Sen1Floods11Dataset, Sen1Floods11DataModule
 from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
+import satlaspretrain_models
 from model import SegModule
 from utils import *
 import segmentation_models_pytorch as smp
@@ -79,6 +80,10 @@ def get_args():
         args.__dict__['target'] = 'Flood'
         args.__dict__['scheduler'] = 'CosineAnnealingWarmRestarts'
 
+    args.__dict__['normalize'] = False
+    if args.__dict__['model'] == 'satlas':
+        args.__dict__['normalize'] =  True
+
     return args
 
 class LogPredictionsCallback(Callback):
@@ -120,7 +125,7 @@ class LogPredictionsCallback(Callback):
         wandb_logger.log_table(key=f'SAR Flood Detection-{set}', columns=columns, data=data)
 
 def create_model(args):
-    
+
     model_class = {
         "u-net": smp.Unet,
         "linknet": smp.Linknet,
@@ -128,7 +133,7 @@ def create_model(args):
         "ma-net": smp.MAnet,
         "deeplabv3+": smp.DeepLabV3Plus,
         "fpn": smp.FPN,
-        "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
+        "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True),
     }
     image_processor = None
     
@@ -143,7 +148,11 @@ def create_model(args):
         else:
             model = model_class[args.model]
             model.classifier[4] = nn.Conv2d(512, 1, kernel_size=(1, 1), stride=(1, 1))
-        
+    
+    elif args.model == 'satlas':
+        weights_manager = satlaspretrain_models.Weights()
+        model = weights_manager.get_pretrained_model("Sentinel1_SwinB_SI", fpn=True, head=satlaspretrain_models.Head.SEGMENT, num_categories=2)
+
     elif 'segformer' in args.model:
         id2label = {'0': 'flood'}
         label2id = {v:k for k, v in id2label.items()}
@@ -188,7 +197,7 @@ if __name__ == '__main__':
 
     print(f'CSV location:{path}')
     datamodule = Sen1Floods11DataModule(path, args.label_type, target=args.target, batch_size=args.batch_size, num_workers=args.num_workers,
-                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand, filter_data=args.filter_data)
+                              debug=args.debug, transforms=args.transforms, in_channels=args.in_channels, expand=args.expand, filter_data=args.filter_data, normalize=args.normalize)
     datamodule.setup()
     
     callbacks = []

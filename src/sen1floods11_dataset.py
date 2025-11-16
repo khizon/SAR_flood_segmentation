@@ -195,7 +195,8 @@ class Sen1Floods11Dataset(Dataset):
         # label = np.where(label == -1, 0, label)
             
         # Convert NaNs to 999
-        img = np.nan_to_num(img, 999)
+        if not self.normalize:
+            img = np.nan_to_num(img, 999)
         label = np.nan_to_num(label, -1)
         
         # apply augmentations if specified

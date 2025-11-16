@@ -80,18 +80,28 @@ class SegModule(LightningModule):
             y_hat = torch.nn.functional.interpolate(outputs.logits, size=(x.shape[2],x.shape[3]), mode="bilinear", align_corners=False)
         elif self.model_class == 'fcn':
             y_hat = self.model(x)['out']
+        elif self.model_class == 'satlas':
+            y_hat = self.model(self.img_process(x))[0][:, 1, :, :].unsqueeze(1)
         else:
             y_hat = self.model(x)
         if self.training:
             y_hat = self.dropout(y_hat)
         
-        # Post-processing step
-        # Create a mask for pixels with value 999 in the first two channels of x
-        mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
-        # Use the mask to set corresponding pixels in y_hat to 0
-        y_hat[mask] = -1e3
+        if self.model_class != 'satlas':
+            # Post-processing step
+            # Create a mask for pixels with value 999 in the first two channels of x
+            mask = (x[:, 0:2, :, :] == 999).any(dim=1, keepdim=True)
+            # Use the mask to set corresponding pixels in y_hat to 0
+            y_hat[mask] = -1e3
         
         return y_hat
+    
+    def img_process(self, x):
+        '''
+        x of shape (B, 3, H, W)
+        x values in range (0, 255.0)
+        '''
+        return x[:, :2, :, :]/255 #Take only first 2 channels
  
     def configure_optimizers(self):
         optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
