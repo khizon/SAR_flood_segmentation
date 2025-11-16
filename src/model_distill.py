@@ -95,7 +95,6 @@ class DistillModel(LightningModule):
             self.teacher_model = self.create_teacher_model()
             self.teacher_model.eval()
 
-
             with torch.no_grad():
                 y_teacher = self.teacher_model(x)
 
@@ -266,6 +265,8 @@ class DistillModel(LightningModule):
 
         if self.fp == 'bf16':
             teacher_model = teacher_model.cuda().to(dtype=torch.bfloat16)
+        elif self.fp == 16:
+            teacher_model = teacher_model.cuda().half()
         return teacher_model
     
     def download_model(self):
