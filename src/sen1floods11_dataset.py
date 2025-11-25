@@ -254,7 +254,6 @@ class Sen1Floods11Dataset(Dataset):
 
         return img_cf.astype(np.float32)
 
-    
 class Sen1Floods11DataModule(LightningDataModule):
     def __init__(self, path, label_type='HandLabeled', target='Flood', batch_size=8, num_workers=0, debug=False, transforms=False, in_channels=3, processor=None, expand=1, filter_data=False, normalize=False, **kwargs):
         super().__init__(**kwargs)

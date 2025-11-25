@@ -57,10 +57,11 @@ def get_args():
     
     parser.add_argument("--wandb", action=argparse.BooleanOptionalAction)
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--freeze", action=argparse.BooleanOptionalAction)
     
     # Early Stopping
     parser.add_argument("--delta", default=0.01)
-    parser.add_argument("--patience", default=20)
+    parser.add_argument("--patience", default=10)
     parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction)
     
     parser.add_argument("--transforms", type=str, nargs='+', default=['flip', 'rotate', 'distort'], metavar='N',)   
@@ -74,6 +75,10 @@ def get_args():
     if 'segformer' in args.__dict__['model']:
         args.__dict__['backbone'] = None
         args.__dict__['pre_trained'] = 'ade-512-512'
+    
+    if 'satlas' in args.__dict__['model']:
+        args.__dict__['backbone'] = None
+        args.__dict__['pre_trained'] = 's1'
         
     if args.__dict__['label_type'] == 'WeaklyLabeled':
         args.__dict__['precision'] = 'bf16'
@@ -151,7 +156,14 @@ def create_model(args):
     
     elif args.model == 'satlas':
         weights_manager = satlaspretrain_models.Weights()
-        model = weights_manager.get_pretrained_model("Sentinel1_SwinB_SI", fpn=True, head=satlaspretrain_models.Head.SEGMENT, num_categories=2)
+        model = weights_manager.get_pretrained_model("Sentinel1_SwinB_SI", fpn=True, head=satlaspretrain_models.Head.BINSEGMENT, num_categories=2)
+        if args.freeze:
+            for name, param in model.named_parameters():
+                param.requires_grad = False
+
+            # Unfreeze only the HEAD
+            for name, param in model.head.named_parameters():
+                param.requires_grad = True
 
     elif 'segformer' in args.model:
         id2label = {'0': 'flood'}

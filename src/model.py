@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import wandb
 from transformers import AutoImageProcessor
+import torch.nn.functional as F
 
 def seed_everything(seed=2**3):
     torch.manual_seed(seed)
@@ -50,9 +51,11 @@ class SegModule(LightningModule):
         self.model_class = model_class
         self.debug = debug
         self.scheduler = scheduler
+
+        from_logits = False if self.model_class == 'satlas' else True
         
         if loss == 'dice':
-            self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
+            self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1, from_logits=from_logits)
         elif loss == 'BCE':
             self.loss = smp.losses.SoftBCEWithLogitsLoss(ignore_index=-1)
         elif loss == 'focal':
@@ -73,7 +76,8 @@ class SegModule(LightningModule):
         self.dropout=torch.nn.Dropout(dropout)
 
         
-    def forward(self, x):
+    def forward(self, x, y=None):
+        loss = None
         if 'segformer' in self.model_class:
             outputs = self.model(pixel_values=x)
             # Upsample logits to 256 x 256
@@ -81,7 +85,14 @@ class SegModule(LightningModule):
         elif self.model_class == 'fcn':
             y_hat = self.model(x)['out']
         elif self.model_class == 'satlas':
-            y_hat = self.model(self.img_process(x))[0][:, 1, :, :].unsqueeze(1)
+            # if y is not None:
+            #     y = F.interpolate(y.float(), size=(128,128), mode='nearest')
+            y_hat, loss = self.model(self.img_process(x), y.to(torch.float))
+
+            # if not self.training:
+            y_hat = y_hat[:, 1:2, :, :]
+                # Upsample logits back to 512x512
+                # y_hat = F.interpolate(y_hat, size=(512,512), mode="bilinear", align_corners=False)
         else:
             y_hat = self.model(x)
         if self.training:
@@ -94,14 +105,15 @@ class SegModule(LightningModule):
             # Use the mask to set corresponding pixels in y_hat to 0
             y_hat[mask] = -1e3
         
-        return y_hat
+        return y_hat, loss
     
     def img_process(self, x):
         '''
         x of shape (B, 3, H, W)
         x values in range (0, 255.0)
         '''
-        return x[:, :2, :, :]/255 #Take only first 2 channels
+        #Take only first 2 channels. Switch to VH, VV format.
+        return torch.flip(x[:, :2, :, :], dims=[1]) / 255.0 
  
     def configure_optimizers(self):
         optimizer = Adam([p for p in self.parameters() if p.requires_grad], lr=self.lr)
@@ -122,14 +134,14 @@ class SegModule(LightningModule):
         # if self.debug and (batch_idx==0) and (self.current_epoch==0):
         #     x = torch.full_like(x, np.nan)
         
-        y_hat = self(x)
+        y_hat, loss = self(x, y)
+
         # If y_hat or Loss contains NaNs, skip the batch.
         if torch.isnan(y_hat).any():
             print(f"Skipping Batch {batch_idx}: NaN detected on y_hat\n")
             return None
-        
+        # if self.model_class != 'satlas':
         loss = self.loss(y_hat, y)
-
         if torch.isnan(loss):
             print(f"Skipping Batch {batch_idx}: Loss is NaN\n")
             return None
@@ -148,12 +160,13 @@ class SegModule(LightningModule):
 
     def test_step(self, batch, batch_idx, dataloader_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
-        y_hat = self(x)
+        y_hat, loss = self(x, y)
         if torch.isnan(y_hat).any():
             print(f"Test {dataloader_idx}_{batch_idx}: NaN detected on y_hat\n")
             y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
 
-        loss = self.loss(y_hat, y)
+        if self.model_class != 'satlas':
+            loss = self.loss(y_hat, y)
 
         if dataloader_idx == 0:
             self.test_step_outputs.append({
@@ -195,14 +208,15 @@ class SegModule(LightningModule):
         
     def validation_step(self, batch, batch_idx):
         x, y = batch['img'], batch['label'].unsqueeze(dim=1)
-        y_hat = self(x)
+        y_hat, loss = self(x, y)
 
         # If y_hat or Loss contains NaNs, skip the batch.
         if torch.isnan(y_hat).any():
             print(f"Validation {batch_idx}: NaN detected on y_hat\n")
             y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
-        
-        loss = self.loss(y_hat, y)
+
+        if self.model_class != 'satlas':
+            loss = self.loss(y_hat, y)
 
         if torch.isnan(loss):
             print(f"Validation Batch {batch_idx}: Loss is NaN\n")
