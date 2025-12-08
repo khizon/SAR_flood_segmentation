@@ -131,7 +131,9 @@ dmypy.json
 sen1floods11*
 *.out
 *.slurm
-/wandb/*
+*wandb*
 *.err
 /checkpoints/*
 /artifacts/*
+*.png
+*.ckpt
