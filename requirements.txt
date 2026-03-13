@@ -7,7 +7,9 @@ scikit-image==0.25.2
 scikit-learn==1.6.1
 seaborn==0.13.2
 segmentation_models_pytorch==0.4.0
-torch==2.6.0
-torchvision==0.21.0
+# torch==2.6.0
+# torchvision==0.21.0
 transformers==4.51.1
 wandb==0.19.9
+dotenv
+ipynb
