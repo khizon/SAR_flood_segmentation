@@ -11,16 +11,16 @@ from pytorch_lightning.loggers import WandbLogger
 # from etci_dataset import ETCIDataset, ETCIDataModule
 from sen1floods11_dataset import Sen1Floods11Dataset, Sen1Floods11DataModule
 from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
-import satlaspretrain_models
+# import satlaspretrain_models
 from model import SegModule
 from utils import *
 import segmentation_models_pytorch as smp
 import wandb
 import argparse
-import gc
-from wandb_clean import cleanup_artifacts_per_run
 import sys
 from dotenv import load_dotenv
+
+# os.environ["WANDB_MODE"] = "offline"
 
 def get_args():
     parser = argparse.ArgumentParser(description='SAR Flood Segmentation')
@@ -36,7 +36,7 @@ def get_args():
 
     # Model
     parser.add_argument('--model', type=str, default='linknet')
-    parser.add_argument('--backbone', type=str, default='mobilenet_v2')
+    parser.add_argument('--backbone', type=str, default='timm-mobilenetv3_small_minimal_100')
     parser.add_argument('--loss', type=str, default='dice')
     parser.add_argument('--pre_trained', default='no')
     
@@ -137,8 +137,8 @@ def create_model(args):
         "u-net++": smp.UnetPlusPlus,
         "ma-net": smp.MAnet,
         "deeplabv3+": smp.DeepLabV3Plus,
-        "fpn": smp.FPN,
-        "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True),
+        "fpn": smp.FPN
+        # "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True),
     }
     image_processor = None
     
@@ -154,16 +154,16 @@ def create_model(args):
             model = model_class[args.model]
             model.classifier[4] = nn.Conv2d(512, 1, kernel_size=(1, 1), stride=(1, 1))
     
-    elif args.model == 'satlas':
-        weights_manager = satlaspretrain_models.Weights()
-        model = weights_manager.get_pretrained_model("Sentinel1_SwinB_SI", fpn=True, head=satlaspretrain_models.Head.BINSEGMENT, num_categories=2)
-        if args.freeze:
-            for name, param in model.named_parameters():
-                param.requires_grad = False
+    # elif args.model == 'satlas':
+    #     weights_manager = satlaspretrain_models.Weights()
+    #     model = weights_manager.get_pretrained_model("Sentinel1_SwinB_SI", fpn=True, head=satlaspretrain_models.Head.BINSEGMENT, num_categories=2)
+    #     if args.freeze:
+    #         for name, param in model.named_parameters():
+    #             param.requires_grad = False
 
-            # Unfreeze only the HEAD
-            for name, param in model.head.named_parameters():
-                param.requires_grad = True
+    #         # Unfreeze only the HEAD
+    #         for name, param in model.head.named_parameters():
+    #             param.requires_grad = True
 
     elif 'segformer' in args.model:
         id2label = {'0': 'flood'}
@@ -190,13 +190,20 @@ if __name__ == '__main__':
     seed_everything(42, workers=True)
     wandb.login(key=os.getenv('WANB_API_KEY'))
     
-    if (not args.debug) and (not torch.cuda.is_available()):
-        print("CUDA not available")
-        sys.exit(1)
+    # if (not args.debug) and (not torch.cuda.is_available()):
+    #     print("CUDA not available")
+    #     sys.exit(1)
 
     if torch.cuda.is_available():
-        if ('A100' in torch.cuda.get_device_name()) and (args.precision == 'bf16'):
+        gpu_name = torch.cuda.get_device_name()
+        print(f'GPU: {gpu_name}')
+        if ('A100' in gpu_name) and (args.precision == 'bf16'):
             torch.set_float32_matmul_precision('medium')
+    elif (args.debug):
+        print('GPU not available. Debugging on CPU...')
+    else:
+        print('GPU not available')
+        sys.exit(1)
     
     if args.label_type == 'HandLabeled':
         path = os.path.join(ROOT, args.path, 'hand_labeled.csv')
@@ -261,6 +268,6 @@ if __name__ == '__main__':
     wandb.finish()
     
     del datamodule, model, trainer
-    
+
     # WandB cleanup
-    cleanup_artifacts_per_run(wandb_project, "khizon", dry_run=args.debug)
+    # cleanup_artifacts_per_run(wandb_project, "khizon", dry_run=args.debug)
