@@ -243,9 +243,3 @@ if __name__ == '__main__':
     trainer.test(model, datamodule=datamodule, ckpt_path='best')
 
     wandb.finish()
-
-    del datamodule, model, trainer
-
-    # WandB cleanup
-    cleanup_artifacts_per_run(wandb_project, "khizon", dry_run=args.debug)
-    # cleanup_cache(ROOT)
