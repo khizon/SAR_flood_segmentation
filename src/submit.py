@@ -6,20 +6,35 @@ import subprocess
 
 if __name__ == '__main__':
     sweep = {
-        'model': ['linknet'],
-        'backbone': ['timm-mobilenetv3_small_100',
-                     'timm-mobilenetv3_large_100',
+        'model': ['u-net', 'u-net++'],
+        'backbone': [
+                    'timm-mobilenetv3_small_100',
+                    #  'timm-mobilenetv3_large_100',
                     #  'timm-mobilenetv3_small_minimal_100',
-                     'timm-mobilenetv3_large_minimal_100'],
-        'lr': [0.0001,
+                     'timm-mobilenetv3_large_minimal_100'
+                     ],
+        'lr': [
+                0.0001,
             #    0.0005,
-            #    0.00008
+               0.00008,
+               0.00005
                ],
-        'label_type': ['HandLabeled', 'WeaklyLabeled'],
-        'transforms': ['flip rotate distort', 'flip rotate elastic griddistort'],
-        'expand': [1, 16],
-        'debug': ['',
-                #   ' --no-debug'
+        'label_type': ['HandLabeled',
+                       'WeaklyLabeled'
+                       ],
+        'transforms': [
+                    # 'flip rotate distort'
+                    'flip rotate griddistort',
+                    'shiftscalerotate_10 flip elastic',
+                    #    'flip rotate elastic griddistort'
+                       ],
+        'expand': [
+                    1,
+                   16
+                   ],
+        'debug': [
+                # '',
+                  ' --no-debug'
                   ]
     }
 
@@ -61,7 +76,6 @@ if __name__ == '__main__':
             module load conda
             eval "$(conda shell.bash hook)"
             conda activate sar-env-1
-
             echo $CONDA_DEFAULT_ENV
             echo $CONDA_PREFIX
 
@@ -71,6 +85,9 @@ if __name__ == '__main__':
             echo "Working directory = "$SLURM_SUBMIT_DIR
 
             nvidia-smi
+
+            srun python src/wandb_clean.py
+            rm -rf wandb/*
         '''
         
         filename = f"slurm_scripts/train.slurm"
