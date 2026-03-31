@@ -6,7 +6,7 @@ import subprocess
 
 if __name__ == '__main__':
     sweep = {
-        'model': ['u-net', 'u-net++'],
+        'model': ['linknet', 'u-net', 'u-net++'],
         'backbone': [
                     'timm-mobilenetv3_small_100',
                     #  'timm-mobilenetv3_large_100',
@@ -14,18 +14,18 @@ if __name__ == '__main__':
                      'timm-mobilenetv3_large_minimal_100'
                      ],
         'lr': [
-                0.0001,
+                # 0.0001,
                0.0005,
-               0.00008,
-               0.00005
+            #    0.00008,
+            #    0.00005
                ],
         'label_type': ['HandLabeled',
                        'WeaklyLabeled'
                        ],
         'transforms': [
-                    'flip rotate distort'
-                    'flip rotate griddistort',
-                    'shiftscalerotate_10 flip elastic',
+                    'flip rotate distort',
+                    # 'flip rotate griddistort',
+                    # 'shiftscalerotate_10 flip elastic',
                        'flip rotate elastic griddistort'
                        ],
         'expand': [
@@ -35,7 +35,21 @@ if __name__ == '__main__':
         'debug': [
                 # '',
                   ' --no-debug'
-                  ]
+                  ],
+        'alpha': [
+            0.3,
+            0.5,
+            0.7
+        ],
+        'T': [
+            2,
+            3.5,
+            5
+        ],
+        'teacher': [
+            # 'model-ahxsunm5:v11',
+            'model-hiveajqa:v11'
+        ]
     }
 
     # Ensure output directory exists
@@ -52,7 +66,7 @@ if __name__ == '__main__':
             continue
 
         var_script = (
-            f"srun python src/train.py{combo_dict['debug']} "
+            f"srun python src/train_distill.py{combo_dict['debug']} "
             f"--model {combo_dict['model']} "
             f"--pre_trained imagenet "
             f"--backbone {combo_dict['backbone']} "
@@ -61,6 +75,9 @@ if __name__ == '__main__':
             f"--label_type {combo_dict['label_type']} "
             f"--lr {combo_dict['lr']} "
             f"--expand {combo_dict['expand']} "
+            f"--teacher {combo_dict['teacher']} "
+            f"--alpha {combo_dict['alpha']} "
+            f"--T {combo_dict['T']} "
             f"--scheduler CosineAnnealingWarmRestarts"
         )
 

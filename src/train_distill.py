@@ -18,7 +18,6 @@ import segmentation_models_pytorch as smp
 import wandb
 import argparse
 import gc
-from wandb_clean import cleanup_artifacts_per_run, cleanup_cache
 import sys
 from dotenv import load_dotenv
 
@@ -132,7 +131,7 @@ def create_model(args):
         "ma-net": smp.MAnet,
         "deeplabv3+": smp.DeepLabV3Plus,
         "fpn": smp.FPN,
-        "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
+        # "fcn ": torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
     }
     image_processor = None
 
@@ -175,13 +174,16 @@ if __name__ == '__main__':
     wandb.login(key=os.getenv('WANDB_API_KEY'))
 
 
-    if (not args.debug) and (not torch.cuda.is_available()):
-        print("CUDA not available")
-        sys.exit(1)
-
     if torch.cuda.is_available():
-        if ('A100' in torch.cuda.get_device_name()) and (args.precision == 'bf16'):
+        gpu_name = torch.cuda.get_device_name()
+        print(f'GPU: {gpu_name}')
+        if ('A100' in gpu_name) and (args.precision == 'bf16'):
             torch.set_float32_matmul_precision('medium')
+    elif (args.debug):
+        print('GPU not available. Debugging on CPU...')
+    else:
+        print('GPU not available')
+        sys.exit(1)
 
     if args.label_type == 'HandLabeled':
         path = os.path.join(ROOT, args.path, 'hand_labeled.csv')

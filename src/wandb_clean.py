@@ -27,7 +27,7 @@ def cleanup_artifacts_per_run(project_name, entity, dry_run=True):
             continue
         
         if len(model_artifacts) == 1:
-            tqdm.write(f'KEEPING {model_artifacts[0].name}')
+            tqdm.write(f'ALREADY CLEANED: KEEPING {model_artifacts[0].name}')
             continue
 
         # Find the model artifact tagged as 'best'
