@@ -68,18 +68,18 @@ class DistillModel(LightningModule):
         self.scheduler=scheduler
         self.fp=precision
 
-        if loss == 'dice':
-            self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
-        elif loss == 'BCE':
-            self.loss = smp.losses.SoftBCEWithLogitsLoss(ignore_index=-1)
-        elif loss == 'focal':
-            self.loss = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
-        elif loss == 'Focal+Dice':
-            self.loss = FocalDiceLoss()
-        elif loss == 'BCE+Dice':
-            self.loss = BCEDiceLoss()
-        self.distill_loss = DistillationLoss(temperature=T)
-        self.combined_loss = CombinedLoss(self.loss, alpha, T)
+        # if loss == 'dice':
+        #     self.loss = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
+        # elif loss == 'BCE':
+        #     self.loss = smp.losses.SoftBCEWithLogitsLoss(ignore_index=-1)
+        # elif loss == 'focal':
+        #     self.loss = smp.losses.FocalLoss(mode="binary", ignore_index=-1)
+        # elif loss == 'Focal+Dice':
+        #     self.loss = FocalDiceLoss()
+        # elif loss == 'BCE+Dice':
+        #     self.loss = BCEDiceLoss()
+        # self.distill_loss = DistillationLoss(temperature=T)
+        self.loss = CombinedLoss(smp.losses.DiceLoss(mode="binary", ignore_index=-1), alpha, T)
 
         # self.jaccard_f, self.jaccard_b = BinaryJaccardIndex(ignore_index=0), BinaryJaccardIndex(ignore_index=1)
         self.jaccard_m, self.precision, self.recall, self.f1 = BinaryJaccardIndex(ignore_index=-1), BinaryPrecision(ignore_index=-1), BinaryRecall(ignore_index=-1), BinaryF1Score(ignore_index=-1)
@@ -143,7 +143,7 @@ class DistillModel(LightningModule):
             print(f"Skipping Batch {batch_idx}: NaN detected on y_hat\n")
             return None
         
-        loss = self.combined_loss(y, y_hat, y_teacher)
+        loss = self.loss(y, y_hat, y_teacher)
 
         if torch.isnan(loss):
             print(f"Skipping Batch {batch_idx}: Loss is NaN\n")
